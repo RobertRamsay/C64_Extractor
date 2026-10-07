@@ -128,7 +128,12 @@ gfx_use_colour = false;     // bitmap modes: colours from screen RAM / colour da
 gfx_scr_addr = -1;          // screen RAM (pairs 01/10, or HR ink/paper), -1 = none
 gfx_col_addr = -1;          // colour RAM data (MC pair 11), -1 = none
 gfx_colour_text_x = 0;
-gfx_colour_text_y = 0;          // > 0 after the width handle is dragged
+gfx_colour_text_y = 0;
+gfx_nudge_text_x = 0;
+gfx_nudge_text_y = 0;
+gfx_repeat_index = -1;      // viewer button being held down (nudge auto-repeat)
+gfx_repeat_timer = 0;
+gfx_key_timer = 0;          // arrow-key auto-repeat over the viewer          // > 0 after the width handle is dragged
 gfx_width_drag = false;
 gfx_handle_hover = false;
 

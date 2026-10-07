@@ -1,0 +1,455 @@
+diff --git a/objects/obj_ext_main/Create_0.gml b/objects/obj_ext_main/Create_0.gml
+index f8e4283..8a66f50 100644
+--- a/objects/obj_ext_main/Create_0.gml
++++ b/objects/obj_ext_main/Create_0.gml
+@@ -128,7 +128,12 @@ gfx_use_colour = false;     // bitmap modes: colours from screen RAM / colour da
+ gfx_scr_addr = -1;          // screen RAM (pairs 01/10, or HR ink/paper), -1 = none
+ gfx_col_addr = -1;          // colour RAM data (MC pair 11), -1 = none
+ gfx_colour_text_x = 0;
+-gfx_colour_text_y = 0;          // > 0 after the width handle is dragged
++gfx_colour_text_y = 0;
++gfx_nudge_text_x = 0;
++gfx_nudge_text_y = 0;
++gfx_repeat_index = -1;      // viewer button being held down (nudge auto-repeat)
++gfx_repeat_timer = 0;
++gfx_key_timer = 0;          // arrow-key auto-repeat over the viewer          // > 0 after the width handle is dragged
+ gfx_width_drag = false;
+ gfx_handle_hover = false;
+ 
+diff --git a/objects/obj_ext_main/Step_0.gml b/objects/obj_ext_main/Step_0.gml
+index 6174c44..060077c 100644
+--- a/objects/obj_ext_main/Step_0.gml
++++ b/objects/obj_ext_main/Step_0.gml
+@@ -106,10 +106,28 @@ if (_lmb_pressed) {
+         if (point_in_rectangle(_mx, _my, _gb.bx, _gb.by, _gb.bx + _gb.bw, _gb.by + _gb.bh)) {
+             scr_ext_gfx_do_button(_gb, _shift);
+             _lmb_pressed = false;
++            if (_gb.action == "gnudge") {
++                gfx_repeat_index = _i;
++                gfx_repeat_timer = 18;
++            }
+             break;
+         }
+     }
+ }
++// Holding a nudge button repeats it
++if (gfx_repeat_index >= 0) {
++    var _rb = gfx_buttons[gfx_repeat_index];
++    if (_lmb_held && point_in_rectangle(_mx, _my, _rb.bx, _rb.by, _rb.bx + _rb.bw, _rb.by + _rb.bh)) {
++        gfx_repeat_timer -= 1;
++        if (gfx_repeat_timer <= 0) {
++            scr_ext_gfx_do_button(_rb, false);
++            gfx_repeat_timer = 3;
++        }
++    }
++    else {
++        gfx_repeat_index = -1;
++    }
++}
+ if (_lmb_pressed) {
+     var _sw = scr_ext_gfx_swatch_hit(_mx, _my);
+     if (_sw >= 0) {
+@@ -248,11 +266,50 @@ if (keyboard_check_pressed(ord("E"))) {
+         scr_ext_sel_set(cursor_addr, cursor_addr);
+     }
+ }
+-if (keyboard_check_pressed(vk_left)) {
+-    scr_ext_set_cursor(cursor_addr - 1, false);
++// Left / Right: over the viewer they nudge the picture (cell, Shift = byte,
++// held = repeat); elsewhere they move the cursor
++var _over_viewer = point_in_rectangle(_mx, _my, gfx_x, gfx_y, gfx_x + gfx_w, gfx_y + gfx_h);
++if (_over_viewer) {
++    var _dir = 0;
++    if (keyboard_check(vk_left)) {
++        _dir = -1;
++    }
++    if (keyboard_check(vk_right)) {
++        _dir = 1;
++    }
++    if (_dir != 0) {
++        var _fire = false;
++        if (keyboard_check_pressed(vk_left) || keyboard_check_pressed(vk_right)) {
++            _fire = true;
++            gfx_key_timer = 18;
++        }
++        else {
++            gfx_key_timer -= 1;
++            if (gfx_key_timer <= 0) {
++                _fire = true;
++                gfx_key_timer = 3;
++            }
++        }
++        if (_fire) {
++            if (_shift) {
++                scr_ext_gfx_nudge(_dir);
++            }
++            else {
++                scr_ext_gfx_nudge(_dir * gfx_cell_bytes);
++            }
++        }
++    }
++}
++else {
++    if (keyboard_check_pressed(vk_left)) {
++        scr_ext_set_cursor(cursor_addr - 1, false);
++    }
++    if (keyboard_check_pressed(vk_right)) {
++        scr_ext_set_cursor(cursor_addr + 1, false);
++    }
+ }
+-if (keyboard_check_pressed(vk_right)) {
+-    scr_ext_set_cursor(cursor_addr + 1, false);
++if (keyboard_check_pressed(ord("M"))) {
++    scr_ext_gfx_do_button({ action : "gfindcol", arg : 0 }, false);
+ }
+ if (keyboard_check_pressed(vk_down)) {
+     dis_top = (dis_top + scr_ext_disasm_line(dis_top).size) & 0xFFFF;
+diff --git a/scripts/scr_ext_gfx/scr_ext_gfx.gml b/scripts/scr_ext_gfx/scr_ext_gfx.gml
+index 0f32ebb..dfc5351 100644
+--- a/scripts/scr_ext_gfx/scr_ext_gfx.gml
++++ b/scripts/scr_ext_gfx/scr_ext_gfx.gml
+@@ -83,11 +83,11 @@ function scr_ext_gfx_build_buttons() {
+     gfx_swatch_x = _bx;
+     gfx_swatch_y = _by;
+ 
+-    // Row 3: bitmap colours (screen RAM / colour data) and alignment
++    // Row 3: bitmap colours (screen RAM / colour data)
+     _bx = gfx_x;
+     _by = gfx_y + 56;
+-    var _labels3  = ["Colours [K]", "Koala", "Scr = cursor", "Col = cursor", "Align [L]"];
+-    var _actions3 = ["gcolour",     "gkoala", "gscr",        "gcol",         "galign"];
++    var _labels3  = ["Colours [K]", "Find colours [M]", "Koala", "Scr = cursor", "Col = cursor"];
++    var _actions3 = ["gcolour",     "gfindcol",         "gkoala", "gscr",        "gcol"];
+     for (var _i = 0; _i < array_length(_labels3); _i++) {
+         var _w3 = string_width(_labels3[_i]) + 18;
+         array_push(gfx_buttons, { bx : _bx, by : _by, bw : _w3, bh : 22, label : _labels3[_i], action : _actions3[_i], arg : 0 });
+@@ -96,10 +96,24 @@ function scr_ext_gfx_build_buttons() {
+     gfx_colour_text_x = _bx + 8;
+     gfx_colour_text_y = _by + 4;
+ 
++    // Row 4: nudge the start address (hold to repeat) and auto-align
++    _bx = gfx_x;
++    _by = gfx_y + 84;
++    var _labels4  = ["-1 cell", "-1 byte", "+1 byte", "+1 cell", "Align [L]"];
++    var _actions4 = ["gnudge",  "gnudge",  "gnudge",  "gnudge",  "galign"];
++    var _args4    = [-2,        -1,        1,         2,         0];
++    for (var _i = 0; _i < array_length(_labels4); _i++) {
++        var _w4 = string_width(_labels4[_i]) + 18;
++        array_push(gfx_buttons, { bx : _bx, by : _by, bw : _w4, bh : 22, label : _labels4[_i], action : _actions4[_i], arg : _args4[_i] });
++        _bx += _w4 + 4;
++    }
++    gfx_nudge_text_x = _bx + 8;
++    gfx_nudge_text_y = _by + 4;
++
+     gfx_canvas_x = gfx_x;
+-    gfx_canvas_y = gfx_y + 84;
++    gfx_canvas_y = gfx_y + 112;
+     gfx_canvas_w = gfx_w - EXT_SB_W - 8;
+-    gfx_canvas_h = gfx_h - 84;
++    gfx_canvas_h = gfx_h - 112;
+     if (gfx_canvas_h < 32) {
+         gfx_canvas_h = 32;
+     }
+@@ -282,6 +296,23 @@ function scr_ext_gfx_do_button(_b, _shift) {
+             scr_ext_gfx_auto_align();
+             break;
+ 
++        case "gnudge":
++            // arg: +/-1 = one byte, +/-2 = one cell
++            if (_b.arg == -2) {
++                scr_ext_gfx_nudge(-gfx_cell_bytes);
++            }
++            else if (_b.arg == 2) {
++                scr_ext_gfx_nudge(gfx_cell_bytes);
++            }
++            else {
++                scr_ext_gfx_nudge(_b.arg);
++            }
++            break;
++
++        case "gfindcol":
++            scr_ext_gfx_find_colours();
++            break;
++
+         case "ggrid":
+             if (gfx_grid) {
+                 gfx_grid = false;
+@@ -511,6 +542,7 @@ function scr_ext_gfx_draw() {
+     }
+     draw_set_colour(col_dim);
+     draw_text(gfx_colour_text_x, gfx_colour_text_y, _ctext);
++    draw_text(gfx_nudge_text_x, gfx_nudge_text_y, "start $" + scr_ext_hex(gfx_addr, 4) + "   (arrows over the viewer: cell, Shift+arrows: byte)");
+ 
+     if (gfx_dirty || !surface_exists(gfx_surf)) {
+         scr_ext_gfx_render();
+@@ -645,6 +677,34 @@ function scr_ext_gfx_auto_align() {
+             }
+         }
+     }
++    // Pictures shown by the VIC sit on $2000 boundaries; stored copies often on $400 ones
++    var _bank = gfx_addr - (gfx_addr mod 0x2000);
++    for (var _k = -2; _k <= 2; _k++) {
++        var _cand = _bank + _k * 0x2000;
++        if (_cand >= 0 && _cand <= 0xFFFF) {
++            var _sk = scr_ext_gfx_align_score(_cand, _mc);
++            if (_sk >= 0) {
++                if (_best_s < 0 || _sk < _best_s) {
++                    _best_s = _sk;
++                    _best = _cand;
++                }
++            }
++        }
++    }
++    var _kb = gfx_addr - (gfx_addr mod 0x400);
++    for (var _k = -4; _k <= 4; _k++) {
++        var _cand2 = _kb + _k * 0x400;
++        if (_cand2 >= 0 && _cand2 <= 0xFFFF) {
++            var _sk2 = scr_ext_gfx_align_score(_cand2, _mc);
++            if (_sk2 >= 0) {
++                if (_best_s < 0 || _sk2 < _best_s) {
++                    _best_s = _sk2;
++                    _best = _cand2;
++                }
++            }
++        }
++    }
++
+     var _coarse = _best;
+     for (var _f = -7; _f <= 7; _f++) {
+         var _sf = scr_ext_gfx_align_score((_coarse + _f) & 0xFFFF, _mc);
+@@ -662,5 +722,234 @@ function scr_ext_gfx_auto_align() {
+     gfx_addr = _best;
+     gfx_phase = gfx_addr mod gfx_row_bytes;
+     gfx_dirty = true;
+-    status_text = "Bitmap aligned to $" + scr_ext_hex(gfx_addr, 4) + " (8000 bytes, ends $" + scr_ext_hex(gfx_addr + 7999, 4) + "). Screen RAM / colour data usually follow it - try Koala.";
++    status_text = "Bitmap aligned to $" + scr_ext_hex(gfx_addr, 4) + " (ends $" + scr_ext_hex(gfx_addr + 7999, 4) + "). If it still looks shifted, nudge with the cell / byte buttons, then Find colours.";
++}
++
++/// @desc scr_ext_gfx_nudge(bytes) - moves the viewer start by a number of bytes
++function scr_ext_gfx_nudge(_bytes) {
++    gfx_addr = (gfx_addr + _bytes) & 0xFFFF;
++    gfx_phase = gfx_addr mod gfx_row_bytes;
++    gfx_dirty = true;
++}
++
++/// @desc scr_ext_gfx_colour_score(scr, col, bg, mc, edges)
++/// How often neighbouring pixels across cell borders change colour (lower = better).
++/// edges holds the bitmap's per-cell edge pixel indices (see scr_ext_gfx_find_colours).
++/// Returns -1 when the screen block can't be screen RAM (unloaded / one value).
++function scr_ext_gfx_colour_score(_scr, _col, _bg, _mc, _edges) {
++    var _counts = array_create(256, 0);
++    var _top = 0;
++    for (var _c = 0; _c < 1000; _c++) {
++        var _a = (_scr + _c) & 0xFFFF;
++        if (buffer_peek(loaded_buf, _a, buffer_u8) == 0) {
++            return -1;
++        }
++        var _v = buffer_peek(mem_buf, _a, buffer_u8);
++        _counts[_v] += 1;
++        if (_counts[_v] > _top) {
++            _top = _counts[_v];
++        }
++    }
++    if (_top > 900) {
++        return -1;
++    }
++
++    // Colour of each pair index (0..3) per cell
++    var _pal = array_create(4000, 0);
++    for (var _c = 0; _c < 1000; _c++) {
++        var _sv = buffer_peek(mem_buf, (_scr + _c) & 0xFFFF, buffer_u8);
++        var _cv = gfx_col[3];
++        if (_col >= 0) {
++            _cv = buffer_peek(mem_buf, (_col + _c) & 0xFFFF, buffer_u8) & 15;
++        }
++        if (_mc) {
++            _pal[_c * 4]     = _bg;
++            _pal[_c * 4 + 1] = _sv >> 4;
++            _pal[_c * 4 + 2] = _sv & 15;
++            _pal[_c * 4 + 3] = _cv;
++        }
++        else {
++            _pal[_c * 4]     = _sv & 15;
++            _pal[_c * 4 + 1] = _sv >> 4;
++        }
++    }
++
++    var _right = _edges[0];
++    var _left = _edges[1];
++    var _bottom = _edges[2];
++    var _topr = _edges[3];
++    var _per_h = _edges[4];
++    var _mis = 0;
++    var _n = 0;
++    for (var _cy = 0; _cy < 25; _cy++) {
++        for (var _cx = 0; _cx < 40; _cx++) {
++            var _cell = _cy * 40 + _cx;
++            if (_cx < 39) {
++                for (var _r = 0; _r < 8; _r++) {
++                    var _p1 = _pal[_cell * 4 + _right[_cell * 8 + _r]];
++                    var _p2 = _pal[(_cell + 1) * 4 + _left[(_cell + 1) * 8 + _r]];
++                    if (_p1 != _p2) {
++                        _mis += 1;
++                    }
++                    _n += 1;
++                }
++            }
++            if (_cy < 24) {
++                for (var _h = 0; _h < _per_h; _h++) {
++                    var _q1 = _pal[_cell * 4 + _bottom[_cell * _per_h + _h]];
++                    var _q2 = _pal[(_cell + 40) * 4 + _topr[(_cell + 40) * _per_h + _h]];
++                    if (_q1 != _q2) {
++                        _mis += 1;
++                    }
++                    _n += 1;
++                }
++            }
++        }
++    }
++    return _mis / _n;
++}
++
++/// @desc scr_ext_gfx_find_colours()
++/// Tries the usual places for screen RAM and colour data around the bitmap
++/// (Koala / Art Studio offsets, every $400 boundary nearby) and keeps the
++/// combination where colours flow most smoothly across cell borders.
++function scr_ext_gfx_find_colours() {
++    if (!scr_ext_gfx_is_bitmap()) {
++        status_text = "Find colours works in the bitmap modes.";
++        return;
++    }
++    var _mc = scr_ext_gfx_is_mc();
++    var _bmp = gfx_addr;
++
++    // Edge pixel indices of every cell, read once
++    var _per_h = 8;
++    if (_mc) {
++        _per_h = 4;
++    }
++    var _right = array_create(8000, 0);
++    var _left = array_create(8000, 0);
++    var _bottom = array_create(1000 * _per_h, 0);
++    var _topr = array_create(1000 * _per_h, 0);
++    for (var _c = 0; _c < 1000; _c++) {
++        for (var _r = 0; _r < 8; _r++) {
++            var _b = buffer_peek(mem_buf, (_bmp + _c * 8 + _r) & 0xFFFF, buffer_u8);
++            if (_mc) {
++                _right[_c * 8 + _r] = _b & 3;
++                _left[_c * 8 + _r] = _b >> 6;
++            }
++            else {
++                _right[_c * 8 + _r] = _b & 1;
++                _left[_c * 8 + _r] = _b >> 7;
++            }
++        }
++        var _b7 = buffer_peek(mem_buf, (_bmp + _c * 8 + 7) & 0xFFFF, buffer_u8);
++        var _b0 = buffer_peek(mem_buf, (_bmp + _c * 8) & 0xFFFF, buffer_u8);
++        for (var _h = 0; _h < _per_h; _h++) {
++            if (_mc) {
++                _bottom[_c * 4 + _h] = (_b7 >> (6 - _h * 2)) & 3;
++                _topr[_c * 4 + _h] = (_b0 >> (6 - _h * 2)) & 3;
++            }
++            else {
++                _bottom[_c * 8 + _h] = (_b7 >> (7 - _h)) & 1;
++                _topr[_c * 8 + _h] = (_b0 >> (7 - _h)) & 1;
++            }
++        }
++    }
++    var _edges = [_right, _left, _bottom, _topr, _per_h];
++
++    // Screen RAM candidates
++    var _cands = [];
++    array_push(_cands, _bmp + 8000);
++    array_push(_cands, _bmp + 8192);
++    array_push(_cands, _bmp - 1024);
++    array_push(_cands, _bmp - 2048);
++    var _kb = _bmp - (_bmp mod 0x400);
++    for (var _k = -16; _k <= 32; _k++) {
++        array_push(_cands, _kb + _k * 0x400);
++    }
++
++    var _bg = gfx_col[0];
++    var _best_scr = -1;
++    var _best_s = -1;
++    for (var _i = 0; _i < array_length(_cands); _i++) {
++        var _s = _cands[_i];
++        if (_s < 0 || _s + 1000 > 0x10000) {
++            continue;
++        }
++        // Skip the bitmap itself
++        if (_s + 1000 > _bmp && _s < _bmp + 8000) {
++            continue;
++        }
++        var _sc = scr_ext_gfx_colour_score(_s, -1, _bg, _mc, _edges);
++        if (_sc >= 0) {
++            if (_best_s < 0 || _sc < _best_s) {
++                _best_s = _sc;
++                _best_scr = _s;
++            }
++        }
++    }
++    if (_best_scr < 0) {
++        status_text = "Find colours: no screen RAM candidate near $" + scr_ext_hex(_bmp, 4) + ".";
++        return;
++    }
++
++    // Colour data (multicolour pair 11): usually right after the screen RAM
++    var _best_col = -1;
++    if (_mc) {
++        var _ccands = [];
++        array_push(_ccands, _best_scr + 1000);
++        array_push(_ccands, _best_scr + 1024);
++        array_push(_ccands, _bmp + 9000);
++        array_push(_ccands, _bmp + 9216);
++        var _ckb = _best_scr - (_best_scr mod 0x400);
++        for (var _k = -16; _k <= 16; _k++) {
++            array_push(_ccands, _ckb + _k * 0x400);
++        }
++        var _col_s = _best_s;
++        for (var _i = 0; _i < array_length(_ccands); _i++) {
++            var _cc = _ccands[_i];
++            if (_cc < 0 || _cc + 1000 > 0x10000) {
++                continue;
++            }
++            if (_cc + 1000 > _bmp && _cc < _bmp + 8000) {
++                continue;
++            }
++            if (_cc + 1000 > _best_scr && _cc < _best_scr + 1000) {
++                continue;
++            }
++            var _sc2 = scr_ext_gfx_colour_score(_best_scr, _cc, _bg, _mc, _edges);
++            if (_sc2 >= 0 && _sc2 < _col_s) {
++                _col_s = _sc2;
++                _best_col = _cc;
++            }
++        }
++        _best_s = _col_s;
++
++        // Background: Koala keeps it after the colour data, otherwise try all 16
++        var _best_bg = _bg;
++        for (var _bgi = 0; _bgi < 16; _bgi++) {
++            var _sc3 = scr_ext_gfx_colour_score(_best_scr, _best_col, _bgi, _mc, _edges);
++            if (_sc3 >= 0 && _sc3 < _best_s) {
++                _best_s = _sc3;
++                _best_bg = _bgi;
++            }
++        }
++        gfx_col[0] = _best_bg;
++    }
++
++    gfx_scr_addr = _best_scr & 0xFFFF;
++    gfx_col_addr = _best_col;
++    gfx_use_colour = true;
++    gfx_dirty = true;
++    var _msg = "Colours: screen RAM $" + scr_ext_hex(gfx_scr_addr, 4);
++    if (_best_col >= 0) {
++        _msg += ", colour data $" + scr_ext_hex(_best_col, 4);
++    }
++    else if (_mc) {
++        _msg += ", no colour data found (pair 11 uses FG)";
++    }
++    if (_mc) {
++        _msg += ", background " + string(gfx_col[0]);
++    }
++    status_text = _msg + ".";
+ }

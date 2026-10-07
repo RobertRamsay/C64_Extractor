@@ -106,8 +106,26 @@ if (_lmb_pressed) {
         if (point_in_rectangle(_mx, _my, _gb.bx, _gb.by, _gb.bx + _gb.bw, _gb.by + _gb.bh)) {
             scr_ext_gfx_do_button(_gb, _shift);
             _lmb_pressed = false;
+            if (_gb.action == "gnudge") {
+                gfx_repeat_index = _i;
+                gfx_repeat_timer = 18;
+            }
             break;
         }
+    }
+}
+// Holding a nudge button repeats it
+if (gfx_repeat_index >= 0) {
+    var _rb = gfx_buttons[gfx_repeat_index];
+    if (_lmb_held && point_in_rectangle(_mx, _my, _rb.bx, _rb.by, _rb.bx + _rb.bw, _rb.by + _rb.bh)) {
+        gfx_repeat_timer -= 1;
+        if (gfx_repeat_timer <= 0) {
+            scr_ext_gfx_do_button(_rb, false);
+            gfx_repeat_timer = 3;
+        }
+    }
+    else {
+        gfx_repeat_index = -1;
     }
 }
 if (_lmb_pressed) {
@@ -248,11 +266,50 @@ if (keyboard_check_pressed(ord("E"))) {
         scr_ext_sel_set(cursor_addr, cursor_addr);
     }
 }
-if (keyboard_check_pressed(vk_left)) {
-    scr_ext_set_cursor(cursor_addr - 1, false);
+// Left / Right: over the viewer they nudge the picture (cell, Shift = byte,
+// held = repeat); elsewhere they move the cursor
+var _over_viewer = point_in_rectangle(_mx, _my, gfx_x, gfx_y, gfx_x + gfx_w, gfx_y + gfx_h);
+if (_over_viewer) {
+    var _dir = 0;
+    if (keyboard_check(vk_left)) {
+        _dir = -1;
+    }
+    if (keyboard_check(vk_right)) {
+        _dir = 1;
+    }
+    if (_dir != 0) {
+        var _fire = false;
+        if (keyboard_check_pressed(vk_left) || keyboard_check_pressed(vk_right)) {
+            _fire = true;
+            gfx_key_timer = 18;
+        }
+        else {
+            gfx_key_timer -= 1;
+            if (gfx_key_timer <= 0) {
+                _fire = true;
+                gfx_key_timer = 3;
+            }
+        }
+        if (_fire) {
+            if (_shift) {
+                scr_ext_gfx_nudge(_dir);
+            }
+            else {
+                scr_ext_gfx_nudge(_dir * gfx_cell_bytes);
+            }
+        }
+    }
 }
-if (keyboard_check_pressed(vk_right)) {
-    scr_ext_set_cursor(cursor_addr + 1, false);
+else {
+    if (keyboard_check_pressed(vk_left)) {
+        scr_ext_set_cursor(cursor_addr - 1, false);
+    }
+    if (keyboard_check_pressed(vk_right)) {
+        scr_ext_set_cursor(cursor_addr + 1, false);
+    }
+}
+if (keyboard_check_pressed(ord("M"))) {
+    scr_ext_gfx_do_button({ action : "gfindcol", arg : 0 }, false);
 }
 if (keyboard_check_pressed(vk_down)) {
     dis_top = (dis_top + scr_ext_disasm_line(dis_top).size) & 0xFFFF;
