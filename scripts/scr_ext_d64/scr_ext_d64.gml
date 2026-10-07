@@ -86,12 +86,33 @@ function scr_ext_d64_open(_size) {
                 typename : _type_names[_type & 7],
                 track    : buffer_peek(d64_buf, _e + 3, buffer_u8),
                 sector   : buffer_peek(d64_buf, _e + 4, buffer_u8),
-                blocks   : _blocks
+                blocks   : _blocks,
+                load     : -1,
+                finish   : -1,
+                size     : 0,
+                packed   : false,
+                sys      : -1
             });
         }
         _t = buffer_peek(d64_buf, _o, buffer_u8);
         _s = buffer_peek(d64_buf, _o + 1, buffer_u8);
         _guard++;
+    }
+
+    // Quick per-file summary: load range, SYS address, packed or not
+    for (var _f = 0; _f < array_length(d64_files); _f++) {
+        var _df = d64_files[_f];
+        if (_df.type == 0 || _df.type == 4) {
+            continue;
+        }
+        var _res = scr_ext_d64_extract(_df.track, _df.sector);
+        var _info = scr_ext_scan_file_buf(_res.buf, _res.len);
+        buffer_delete(_res.buf);
+        _df.load = _info.load;
+        _df.finish = _info.finish;
+        _df.size = _info.size;
+        _df.packed = _info.packed;
+        _df.sys = _info.sys;
     }
 
     file_kind = "D64 (" + string(d64_tracks) + " tracks)";

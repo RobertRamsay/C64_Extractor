@@ -23,7 +23,9 @@
 #macro EXT_CLS_MUSIC    7
 // cyan   - text (phase 3)
 #macro EXT_CLS_TEXT     8
-#macro EXT_CLS_COUNT    9
+// magenta - packed / crunched (high entropy)
+#macro EXT_CLS_PACKED   9
+#macro EXT_CLS_COUNT    10
 
 // 6502 addressing modes
 #macro EXT_MODE_IMP  0

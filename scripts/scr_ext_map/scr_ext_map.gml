@@ -10,6 +10,7 @@ function scr_ext_cls_colour(_c) {
         case EXT_CLS_GFX:     return make_colour_rgb(60, 120, 230);
         case EXT_CLS_MUSIC:   return make_colour_rgb(170, 90, 220);
         case EXT_CLS_TEXT:    return make_colour_rgb(60, 200, 220);
+        case EXT_CLS_PACKED:  return make_colour_rgb(220, 70, 170);
     }
     return c_white;
 }
@@ -26,6 +27,7 @@ function scr_ext_cls_name(_c) {
         case EXT_CLS_GFX:     return "Graphics";
         case EXT_CLS_MUSIC:   return "Music / SID";
         case EXT_CLS_TEXT:    return "Text";
+        case EXT_CLS_PACKED:  return "Packed";
     }
     return "?";
 }

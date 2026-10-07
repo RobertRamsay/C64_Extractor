@@ -199,6 +199,9 @@ for (var _k = 0; _k < EXT_GFX_MODE_COUNT; _k++) {
 if (keyboard_check_pressed(ord("X"))) {
     scr_ext_do_action("export", false);
 }
+if (keyboard_check_pressed(ord("J"))) {
+    scr_ext_jump_clue();
+}
 if (keyboard_check_pressed(ord("W"))) {
     scr_ext_sel_region();
 }

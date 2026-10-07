@@ -29,8 +29,25 @@ function scr_ext_analyse() {
         }
     }
 
+    // Data detection on everything the tracer didn't claim
+    scr_ext_apply_vic_clues(scr_ext_find_vic_writes());
+    scr_ext_detect_packed();
+    scr_ext_detect_text();
+    scr_ext_detect_gfx();
+
+    // Whatever is left is graded as possible / doubtful / not code
     scr_ext_score_unknown();
     scr_ext_count_classes();
+
+    // One-line verdict for the info panel
+    var _loaded = 65536 - cls_counts[EXT_CLS_NONE];
+    verdict_text = "";
+    if (_loaded > 0 && cls_counts[EXT_CLS_PACKED] * 10 >= _loaded * 3) {
+        verdict_text = "Mostly packed data - this file is crunched. Load a VICE memory dump taken after it decrunches to see inside.";
+    }
+    else if (array_length(vic_clues) > 0) {
+        verdict_text = string(array_length(vic_clues)) + " VIC clues from the code (screen / charset / bitmap / sprites) - press J to step through them.";
+    }
     map_dirty = true;
 }
 

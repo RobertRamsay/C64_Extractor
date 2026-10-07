@@ -2,6 +2,7 @@
 
 // ---- 6502 decode table ----
 global.ext_ops = scr_ext_opcode_table();
+global.ext_popcount = scr_ext_popcount_table();
 
 // ---- 64K C64 memory image and per-byte analysis buffers ----
 mem_buf    = buffer_create(65536, buffer_fixed, 1);   // byte values
@@ -19,6 +20,9 @@ segments = [];          // { start, finish, name }
 entries = [];           // { addr, strong, why }
 manual_entries = [];    // addresses traced by hand with C
 cls_counts = array_create(EXT_CLS_COUNT, 0);
+vic_clues = [];          // { addr, len, kind, mode, why }
+clue_index = -1;
+verdict_text = "";
 
 // ---- D64 state ----
 d64_buf = -1;
@@ -39,7 +43,7 @@ full_window_delay = 2;    // frames to wait before sizing the window
 ui_pad = 14;
 top_h = 40;
 line_h = 15;
-info_h = 150;
+info_h = 165;
 
 // ---- Panel rectangles (filled in by scr_ext_layout) ----
 map_x = 0;
@@ -142,7 +146,7 @@ status_text = "Press O to open a PRG, D64 or 64K memory dump. Hold Shift to over
 buttons = [
     { bx : 190, by : 8, bw : 96,  bh : 24, label : "Open [O]",         action : "open" },
     { bx : 292, by : 8, bw : 140, bh : 24, label : "Trace cursor [C]", action : "trace" },
-    { bx : 438, by : 8, bw : 110, bh : 24, label : "Analyse [R]",      action : "analyse" },
+    { bx : 438, by : 8, bw : 110, bh : 24, label : "Re-analyse [R]",   action : "analyse" },
     { bx : 554, by : 8, bw : 120, bh : 24, label : "Shade map [V]",    action : "shade" },
     { bx : 680, by : 8, bw : 130, bh : 24, label : "Fullscreen [F11]", action : "fullscreen" },
     { bx : 816, by : 8, bw : 140, bh : 24, label : "Export sel [X]",   action : "export" }

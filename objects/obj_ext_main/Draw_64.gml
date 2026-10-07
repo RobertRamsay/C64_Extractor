@@ -20,7 +20,7 @@ for (var _i = 0; _i < array_length(buttons); _i++) {
     scr_ext_draw_button(buttons[_i], false);
 }
 draw_set_colour(col_dim);
-draw_text(970, 12, "Shift+drag: select   W: region   B/E: sel begin/end   Esc: clear   1-6: modes   F: follow   G: grid");
+draw_text(970, 12, "J: next VIC clue   Shift+drag: select   W: region   B/E: sel begin/end   Esc: clear   1-6: modes   F: follow   G: grid");
 
 // ---- Memory map ----
 var _map_size = 256 * map_scale;
@@ -177,9 +177,19 @@ for (var _r = 0; _r < dir_rows; _r++) {
         draw_set_colour(col_dim);
     }
     draw_text(dir_x + 4, _fy, string(_f.blocks));
-    draw_text(dir_x + 44, _fy, "\"" + _f.name + "\"");
-    draw_text(dir_x + 220, _fy, _f.typename);
-    draw_text(dir_x + 266, _fy, "T" + string(_f.track) + " S" + string(_f.sector));
+    draw_text(dir_x + 40, _fy, "\"" + _f.name + "\"");
+    draw_text(dir_x + 196, _fy, _f.typename);
+    if (_f.load >= 0) {
+        draw_text(dir_x + 236, _fy, "$" + scr_ext_hex(_f.load, 4) + "-$" + scr_ext_hex(_f.finish, 4));
+    }
+    if (_f.sys >= 0) {
+        draw_set_colour(scr_ext_cls_colour(EXT_CLS_SURE));
+        draw_text(dir_x + 346, _fy, "SYS" + string(_f.sys));
+    }
+    if (_f.packed) {
+        draw_set_colour(scr_ext_cls_colour(EXT_CLS_PACKED));
+        draw_text(dir_x + 420, _fy, "PACKED");
+    }
 }
 scr_ext_sb_draw(sb_dir);
 
@@ -223,6 +233,11 @@ if (_ent_n == 0) {
     _ent_text += "  none - put the cursor on code and press C";
 }
 draw_text(info_x, _iy, _ent_text);
+if (verdict_text != "") {
+    draw_set_colour(scr_ext_cls_colour(EXT_CLS_LIKELY));
+    draw_text(info_x, _iy, verdict_text);
+}
+_iy += line_h;
 if (sel_active) {
     draw_set_colour(col_text);
     draw_text(info_x, _iy, "Selection $" + scr_ext_hex(sel_start, 4) + "-$" + scr_ext_hex(sel_end, 4) + "  (" + string(sel_end - sel_start + 1) + " bytes)   X = export");
