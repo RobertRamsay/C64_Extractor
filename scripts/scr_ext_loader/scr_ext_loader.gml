@@ -17,6 +17,7 @@ function scr_ext_reset_memory() {
 /// Loads a PRG, a D64 or a raw 64K memory dump.
 /// overlay = true keeps what is already in memory (multi-load games).
 function scr_ext_load_path(_path, _overlay) {
+    cpu_active = false;
     if (!file_exists(_path)) {
         status_text = "File not found: " + _path;
         return false;
@@ -103,6 +104,7 @@ function scr_ext_load_path(_path, _overlay) {
     if (_ok) {
         scr_ext_analyse();
         scr_ext_jump_to_start();
+        scr_ext_maybe_auto_unpack();
     }
     return _ok;
 }

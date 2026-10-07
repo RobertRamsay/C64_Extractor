@@ -25,6 +25,7 @@
     {"id":{"name":"obj_ext_main","path":"objects/obj_ext_main/obj_ext_main.yy",},},
     {"id":{"name":"Room1","path":"rooms/Room1/Room1.yy",},},
     {"id":{"name":"scr_ext_analyse","path":"scripts/scr_ext_analyse/scr_ext_analyse.yy",},},
+    {"id":{"name":"scr_ext_cpu","path":"scripts/scr_ext_cpu/scr_ext_cpu.yy",},},
     {"id":{"name":"scr_ext_d64","path":"scripts/scr_ext_d64/scr_ext_d64.yy",},},
     {"id":{"name":"scr_ext_detect","path":"scripts/scr_ext_detect/scr_ext_detect.yy",},},
     {"id":{"name":"scr_ext_disasm","path":"scripts/scr_ext_disasm/scr_ext_disasm.yy",},},

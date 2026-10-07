@@ -169,6 +169,7 @@ function scr_ext_d64_load_entry(_index, _overlay) {
     if (_index < 0 || _index >= array_length(d64_files)) {
         return false;
     }
+    cpu_active = false;
     var _f = d64_files[_index];
     var _res = scr_ext_d64_extract(_f.track, _f.sector);
 
@@ -189,6 +190,7 @@ function scr_ext_d64_load_entry(_index, _overlay) {
         else {
             scr_ext_jump_to_start();
         }
+        scr_ext_maybe_auto_unpack();
     }
     return _ok;
 }

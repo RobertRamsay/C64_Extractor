@@ -5,6 +5,9 @@ buffer_delete(loaded_buf);
 buffer_delete(cls_buf);
 buffer_delete(istart_buf);
 buffer_delete(entry_buf);
+buffer_delete(cpu_mem);
+buffer_delete(cpu_w);
+buffer_delete(cpu_execd);
 if (buffer_exists(d64_buf)) {
     buffer_delete(d64_buf);
 }

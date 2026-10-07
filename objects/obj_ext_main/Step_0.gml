@@ -9,6 +9,17 @@ if (full_window_delay > 0) {
 }
 scr_ext_update_window();
 
+// ---- Decrunch runner: a time slice per frame ----
+if (cpu_active) {
+    if (keyboard_check_pressed(vk_escape)) {
+        cpu_active = false;
+        status_text = "Unpacking cancelled - memory left as loaded.";
+    }
+    else {
+        scr_ext_cpu_slice(14);
+    }
+}
+
 var _mx = device_mouse_x_to_gui(0);
 var _my = device_mouse_y_to_gui(0);
 var _shift = keyboard_check(vk_shift);
@@ -198,6 +209,9 @@ for (var _k = 0; _k < EXT_GFX_MODE_COUNT; _k++) {
 }
 if (keyboard_check_pressed(ord("X"))) {
     scr_ext_do_action("export", false);
+}
+if (keyboard_check_pressed(ord("U"))) {
+    scr_ext_do_action("unpack", false);
 }
 if (keyboard_check_pressed(ord("J"))) {
     scr_ext_jump_clue();

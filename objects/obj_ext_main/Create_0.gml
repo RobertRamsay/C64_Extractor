@@ -3,6 +3,16 @@
 // ---- 6502 decode table ----
 global.ext_ops = scr_ext_opcode_table();
 global.ext_popcount = scr_ext_popcount_table();
+scr_ext_cpu_tables();
+
+// ---- Decrunch runner (bare 6502 over its own copy of RAM) ----
+cpu_mem   = buffer_create(65536, buffer_fixed, 1);
+cpu_w     = buffer_create(65536, buffer_fixed, 1);   // 1 = written by the unpacker
+cpu_execd = buffer_create(65536, buffer_fixed, 1);   // 1 = executed since last written
+cpu = scr_ext_cpu_new_state();
+cpu_active = false;
+cpu_entry = 0;
+auto_unpack = true;
 
 // ---- 64K C64 memory image and per-byte analysis buffers ----
 mem_buf    = buffer_create(65536, buffer_fixed, 1);   // byte values
@@ -149,7 +159,8 @@ buttons = [
     { bx : 438, by : 8, bw : 110, bh : 24, label : "Re-analyse [R]",   action : "analyse" },
     { bx : 554, by : 8, bw : 120, bh : 24, label : "Shade map [V]",    action : "shade" },
     { bx : 680, by : 8, bw : 130, bh : 24, label : "Fullscreen [F11]", action : "fullscreen" },
-    { bx : 816, by : 8, bw : 140, bh : 24, label : "Export sel [X]",   action : "export" }
+    { bx : 816, by : 8, bw : 140, bh : 24, label : "Export sel [X]",   action : "export" },
+    { bx : 962, by : 8, bw : 110, bh : 24, label : "Unpack [U]",       action : "unpack" }
 ];
 
 // ---- Colours ----

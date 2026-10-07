@@ -102,6 +102,12 @@ function scr_ext_do_action(_action, _overlay) {
             }
             break;
 
+        case "unpack":
+            if (!cpu_active) {
+                scr_ext_decrunch_start(scr_ext_unpack_entry());
+            }
+            break;
+
         case "export":
             scr_ext_export_selection();
             break;
