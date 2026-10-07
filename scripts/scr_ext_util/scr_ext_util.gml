@@ -42,21 +42,24 @@ function scr_ext_petscii_char(_v) {
 }
 
 /// @desc scr_ext_set_cursor(addr, move_views)
-/// Sets the cursor; optionally scrolls the hex and disassembly views to it.
+/// Sets the cursor; optionally scrolls the hex and disassembly views to it,
+/// and moves the graphics viewer too when Follow is on.
 function scr_ext_set_cursor(_addr, _move_views) {
     cursor_addr = _addr & 0xFFFF;
     if (_move_views) {
-        var _ht = (cursor_addr & 0xFFF8) - 8 * 8;
-        if (_ht < 0) {
-            _ht = 0;
+        scr_ext_views_to(cursor_addr);
+        if (gfx_follow) {
+            scr_ext_gfx_follow();
         }
-        var _hmax = 65536 - hex_rows * 8;
-        if (_ht > _hmax) {
-            _ht = _hmax;
-        }
-        hex_top = _ht;
-        dis_top = scr_ext_align_to_instr(cursor_addr);
     }
+}
+
+/// @desc scr_ext_views_to(addr)
+/// Scrolls the hex and disassembly views to an address (the viewer stays put).
+function scr_ext_views_to(_addr) {
+    hex_top = (_addr & 0xFFF8) - 8 * 8;
+    scr_ext_clamp_hex_top();
+    dis_top = scr_ext_align_to_instr(_addr);
 }
 
 /// @desc scr_ext_do_action(action, overlay)
@@ -84,6 +87,15 @@ function scr_ext_do_action(_action, _overlay) {
 
         case "analyse":
             scr_ext_analyse();
+            break;
+
+        case "fullscreen":
+            if (window_get_fullscreen()) {
+                window_set_fullscreen(false);
+            }
+            else {
+                window_set_fullscreen(true);
+            }
             break;
 
         case "shade":

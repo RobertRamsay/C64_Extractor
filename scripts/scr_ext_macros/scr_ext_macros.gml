@@ -55,3 +55,15 @@
 #macro EXT_SEQ_LENGTH    12
 #macro EXT_LIKELY_SCORE  14
 #macro EXT_DOUBT_SCORE   6
+
+// Graphics viewer modes
+#macro EXT_GFX_CHAR_HR    0
+#macro EXT_GFX_CHAR_MC    1
+#macro EXT_GFX_SPR_HR     2
+#macro EXT_GFX_SPR_MC     3
+#macro EXT_GFX_BMP_HR     4
+#macro EXT_GFX_BMP_MC     5
+#macro EXT_GFX_MODE_COUNT 6
+
+// Scroll bar width (GUI pixels)
+#macro EXT_SB_W 14

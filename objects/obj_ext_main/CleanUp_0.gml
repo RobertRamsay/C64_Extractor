@@ -11,3 +11,9 @@ if (buffer_exists(d64_buf)) {
 if (surface_exists(map_surf)) {
     surface_free(map_surf);
 }
+if (buffer_exists(gfx_buf)) {
+    buffer_delete(gfx_buf);
+}
+if (surface_exists(gfx_surf)) {
+    surface_free(gfx_surf);
+}

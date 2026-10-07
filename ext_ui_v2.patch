@@ -1,0 +1,1535 @@
+diff --git a/C64_Extractor.yyp b/C64_Extractor.yyp
+index abc8a25..7202f96 100644
+--- a/C64_Extractor.yyp
++++ b/C64_Extractor.yyp
+@@ -27,10 +27,12 @@
+     {"id":{"name":"scr_ext_analyse","path":"scripts/scr_ext_analyse/scr_ext_analyse.yy",},},
+     {"id":{"name":"scr_ext_d64","path":"scripts/scr_ext_d64/scr_ext_d64.yy",},},
+     {"id":{"name":"scr_ext_disasm","path":"scripts/scr_ext_disasm/scr_ext_disasm.yy",},},
++    {"id":{"name":"scr_ext_gfx","path":"scripts/scr_ext_gfx/scr_ext_gfx.yy",},},
+     {"id":{"name":"scr_ext_loader","path":"scripts/scr_ext_loader/scr_ext_loader.yy",},},
+     {"id":{"name":"scr_ext_macros","path":"scripts/scr_ext_macros/scr_ext_macros.yy",},},
+     {"id":{"name":"scr_ext_map","path":"scripts/scr_ext_map/scr_ext_map.yy",},},
+     {"id":{"name":"scr_ext_opcode_table","path":"scripts/scr_ext_opcode_table/scr_ext_opcode_table.yy",},},
++    {"id":{"name":"scr_ext_ui","path":"scripts/scr_ext_ui/scr_ext_ui.yy",},},
+     {"id":{"name":"scr_ext_util","path":"scripts/scr_ext_util/scr_ext_util.yy",},},
+   ],
+   "resourceType":"GMProject",
+diff --git a/objects/obj_ext_main/CleanUp_0.gml b/objects/obj_ext_main/CleanUp_0.gml
+index 5098d31..c768708 100644
+--- a/objects/obj_ext_main/CleanUp_0.gml
++++ b/objects/obj_ext_main/CleanUp_0.gml
+@@ -11,3 +11,9 @@ if (buffer_exists(d64_buf)) {
+ if (surface_exists(map_surf)) {
+     surface_free(map_surf);
+ }
++if (buffer_exists(gfx_buf)) {
++    buffer_delete(gfx_buf);
++}
++if (surface_exists(gfx_surf)) {
++    surface_free(gfx_surf);
++}
+diff --git a/objects/obj_ext_main/Create_0.gml b/objects/obj_ext_main/Create_0.gml
+index ea8a8a9..af16fbf 100644
+--- a/objects/obj_ext_main/Create_0.gml
++++ b/objects/obj_ext_main/Create_0.gml
+@@ -28,36 +28,97 @@ d64_files = [];         // { name, type, typename, track, sector, blocks }
+ d64_selected = -1;
+ d64_scroll = 0;
+ 
+-// ---- Layout (room is 1366 x 768) ----
+-line_h = 14;
++// ---- Window / GUI scaling (set properly by scr_ext_update_window) ----
++ui_scale = 1;
++gui_w = 1366;
++gui_h = 768;
++last_win_w = 0;
++last_win_h = 0;
++ui_pad = 14;
++top_h = 40;
++line_h = 15;
++info_h = 150;
+ 
+-map_x = 12;
+-map_y = 48;
++// ---- Panel rectangles (filled in by scr_ext_layout) ----
++map_x = 0;
++map_y = 0;
+ map_scale = 2;
+ map_surf = -1;
+ map_dirty = true;
+ map_shaded = false;
+ 
+-hex_x = 540;
+-hex_y = 48;
+-hex_w = 320;
+-hex_rows = 40;
++hex_x = 0;
++hex_y = 0;
++hex_w = 0;
++hex_h = 0;
++hex_rows = 20;
+ hex_top = 0;
+ 
+-dis_x = 876;
+-dis_y = 48;
+-dis_w = 480;
+-dis_rows = 40;
++dis_x = 0;
++dis_y = 0;
++dis_w = 0;
++dis_h = 0;
++dis_rows = 20;
+ dis_top = 0;
+ dis_line_addrs = array_create(dis_rows, 0);
+ 
+-dir_x = 12;
+-dir_y = 572;
+-dir_w = 512;
+-dir_rows = 12;
++dir_x = 0;
++dir_y = 0;
++dir_w = 0;
++dir_h = 0;
++dir_rows = 8;
+ 
+-info_x = 540;
+-info_y = 626;
++info_x = 0;
++info_y = 0;
++info_w = 0;
++
++// ---- Graphics viewer ----
++gfx_x = 0;
++gfx_y = 0;
++gfx_w = 0;
++gfx_h = 0;
++gfx_canvas_x = 0;
++gfx_canvas_y = 0;
++gfx_canvas_w = 256;
++gfx_canvas_h = 256;
++gfx_swatch_x = 0;
++gfx_swatch_y = 0;
++gfx_buttons = [];
++gfx_mode = EXT_GFX_CHAR_HR;
++gfx_addr = 0;
++gfx_char_cols = 32;
++gfx_spr_cols = 8;
++gfx_follow = true;
++gfx_grid = true;
++gfx_col = [0, 11, 12, 1];     // BG, MC1, MC2, FG as C64 colour indices
++gfx_cell_w = 8;
++gfx_cell_h = 8;
++gfx_cell_bytes = 8;
++gfx_gap = 0;
++gfx_align = 8;
++gfx_row_cols = 32;
++gfx_rows = 1;
++gfx_zoom = 1;
++gfx_img_w = 8;
++gfx_img_h = 8;
++gfx_screen_bytes = 8;
++gfx_surf = -1;
++gfx_buf = -1;
++gfx_dirty = true;
++
++c64_pal = scr_ext_c64_palette();
++c64_pal_u32 = array_create(16, 0);
++for (var _i = 0; _i < 16; _i++) {
++    c64_pal_u32[_i] = scr_ext_rgba(c64_pal[_i][0], c64_pal[_i][1], c64_pal[_i][2]);
++}
++gfx_none_u32 = scr_ext_rgba(20, 20, 30);
++gfx_gap_u32 = scr_ext_rgba(40, 40, 56);
++
++// ---- Scroll bars ----
++sb_hex = scr_ext_sb_create();
++sb_dis = scr_ext_sb_create();
++sb_dir = scr_ext_sb_create();
++sb_gfx = scr_ext_sb_create();
+ 
+ cursor_addr = 0;
+ hover_addr = -1;
+@@ -65,21 +126,30 @@ status_text = "Press O to open a PRG, D64 or 64K memory dump. Hold Shift to over
+ 
+ // ---- Toolbar ----
+ buttons = [
+-    { bx : 300, by : 6, bw : 96,  bh : 24, label : "Open [O]",      action : "open" },
+-    { bx : 402, by : 6, bw : 150, bh : 24, label : "Trace cursor [C]", action : "trace" },
+-    { bx : 558, by : 6, bw : 110, bh : 24, label : "Analyse [R]",   action : "analyse" },
+-    { bx : 674, by : 6, bw : 110, bh : 24, label : "Shade map [V]", action : "shade" }
++    { bx : 190, by : 8, bw : 96,  bh : 24, label : "Open [O]",         action : "open" },
++    { bx : 292, by : 8, bw : 140, bh : 24, label : "Trace cursor [C]", action : "trace" },
++    { bx : 438, by : 8, bw : 110, bh : 24, label : "Analyse [R]",      action : "analyse" },
++    { bx : 554, by : 8, bw : 120, bh : 24, label : "Shade map [V]",    action : "shade" },
++    { bx : 680, by : 8, bw : 130, bh : 24, label : "Fullscreen [F11]", action : "fullscreen" }
+ ];
+ 
+ // ---- Colours ----
+-col_bg      = make_colour_rgb(10, 10, 14);
+-col_panel   = make_colour_rgb(24, 24, 32);
+-col_border  = make_colour_rgb(60, 60, 80);
+-col_text    = make_colour_rgb(210, 210, 220);
+-col_dim     = make_colour_rgb(120, 120, 140);
+-col_cursor  = make_colour_rgb(60, 60, 110);
+-col_entry   = make_colour_rgb(255, 255, 255);
+-col_button  = make_colour_rgb(40, 40, 58);
++col_bg        = make_colour_rgb(10, 10, 14);
++col_panel     = make_colour_rgb(24, 24, 32);
++col_border    = make_colour_rgb(60, 60, 80);
++col_text      = make_colour_rgb(210, 210, 220);
++col_title     = make_colour_rgb(150, 160, 200);
++col_dim       = make_colour_rgb(120, 120, 140);
++col_cursor    = make_colour_rgb(60, 60, 110);
++col_entry     = make_colour_rgb(255, 255, 255);
++col_button    = make_colour_rgb(40, 40, 58);
+ col_button_hi = make_colour_rgb(64, 64, 96);
++col_button_on = make_colour_rgb(50, 90, 150);
++col_sb_track  = make_colour_rgb(16, 16, 22);
++col_sb_thumb  = make_colour_rgb(80, 80, 110);
++col_gfx_range = make_colour_rgb(60, 120, 230);
+ 
++gpu_set_texfilter(false);
+ scr_ext_reset_memory();
++window_set_fullscreen(true);
++scr_ext_update_window();
+diff --git a/objects/obj_ext_main/Draw_0.gml b/objects/obj_ext_main/Draw_64.gml
+similarity index 62%
+rename from objects/obj_ext_main/Draw_0.gml
+rename to objects/obj_ext_main/Draw_64.gml
+index 9f22493..d987422 100644
+--- a/objects/obj_ext_main/Draw_0.gml
++++ b/objects/obj_ext_main/Draw_64.gml
+@@ -1,51 +1,52 @@
+-/// @desc Draw all panels
++/// @desc Draw all panels (GUI layer, scaled for high-DPI screens)
+ 
+ draw_set_halign(fa_left);
+ draw_set_valign(fa_top);
+ 
+ if (map_dirty || !surface_exists(map_surf)) {
+     scr_ext_build_map();
++    gfx_dirty = true;
+ }
+ 
+ // ---- Background and toolbar ----
+ draw_set_colour(col_bg);
+-draw_rectangle(0, 0, room_width, room_height, false);
++draw_rectangle(0, 0, gui_w, gui_h, false);
+ draw_set_colour(col_panel);
+-draw_rectangle(0, 0, room_width, 36, false);
++draw_rectangle(0, 0, gui_w, top_h, false);
+ draw_set_colour(col_text);
+-draw_text(12, 11, "C64 EXTRACTOR");
+-draw_set_colour(col_dim);
+-draw_text(130, 11, "phase 1");
++draw_text(ui_pad, 12, "C64 EXTRACTOR");
+ 
+ for (var _i = 0; _i < array_length(buttons); _i++) {
+-    var _b = buttons[_i];
+-    var _over = point_in_rectangle(mouse_x, mouse_y, _b.bx, _b.by, _b.bx + _b.bw, _b.by + _b.bh);
+-    if (_over) {
+-        draw_set_colour(col_button_hi);
+-    }
+-    else {
+-        draw_set_colour(col_button);
+-    }
+-    draw_rectangle(_b.bx, _b.by, _b.bx + _b.bw, _b.by + _b.bh, false);
+-    draw_set_colour(col_border);
+-    draw_rectangle(_b.bx, _b.by, _b.bx + _b.bw, _b.by + _b.bh, true);
+-    draw_set_colour(col_text);
+-    draw_text(_b.bx + 8, _b.by + 5, _b.label);
++    scr_ext_draw_button(buttons[_i], false);
+ }
+ draw_set_colour(col_dim);
+-draw_text(800, 11, "Wheel scrolls panels   Up/Down/PgUp/PgDn: disassembly   Left/Right: cursor");
++draw_text(830, 12, "1-6: viewer mode   F: follow   G: grid   Shift+wheel on viewer: 1 byte   Shift+click swatch: previous colour");
+ 
+ // ---- Memory map ----
+ var _map_size = 256 * map_scale;
++scr_ext_panel(map_x, map_y, _map_size, _map_size, "MEMORY MAP   one row = one page ($100 bytes)");
+ draw_surface_ext(map_surf, map_x, map_y, map_scale, map_scale, 0, c_white, 1);
+-draw_set_colour(col_border);
+-draw_rectangle(map_x - 1, map_y - 1, map_x + _map_size, map_y + _map_size, true);
+ 
+-// Hex view range bracket on the left edge of the map
++// Tick marks every $1000
++draw_set_colour(col_dim);
++for (var _pg = 0; _pg < 16; _pg++) {
++    var _ly = map_y + _pg * 16 * map_scale;
++    draw_line(map_x - 6, _ly, map_x - 1, _ly);
++}
++
++// Hex view range bracket (left) and graphics viewer range bracket (right)
+ var _hy1 = map_y + (hex_top >> 8) * map_scale;
+ var _hy2 = map_y + (((hex_top + hex_rows * 8 - 1) & 0xFFFF) >> 8) * map_scale + map_scale;
+ draw_set_colour(col_dim);
+-draw_rectangle(map_x - 6, _hy1, map_x - 3, _hy2, false);
++draw_rectangle(map_x - 12, _hy1, map_x - 9, _hy2, false);
++
++var _g1 = gfx_addr;
++var _g2 = gfx_addr + gfx_screen_bytes - 1;
++if (_g2 > 0xFFFF) {
++    _g2 = 0xFFFF;
++}
++draw_set_colour(col_gfx_range);
++draw_rectangle(map_x + _map_size + 3, map_y + (_g1 >> 8) * map_scale, map_x + _map_size + 6, map_y + (_g2 >> 8) * map_scale + map_scale, false);
+ 
+ // Cursor marker
+ var _cx = map_x + (cursor_addr & 0xFF) * map_scale;
+@@ -53,42 +54,45 @@ var _cy = map_y + (cursor_addr >> 8) * map_scale;
+ draw_set_colour(c_white);
+ draw_rectangle(_cx - 2, _cy - 2, _cx + map_scale + 1, _cy + map_scale + 1, true);
+ 
++// ---- Graphics viewer ----
++scr_ext_gfx_draw();
++
+ // ---- Hex view ----
+-draw_set_colour(col_panel);
+-draw_rectangle(hex_x - 6, hex_y - 6, hex_x + hex_w, hex_y + hex_rows * line_h + 2, false);
++scr_ext_panel(hex_x, hex_y, hex_w, hex_h, "HEX");
+ for (var _r = 0; _r < hex_rows; _r++) {
+     var _base = (hex_top + _r * 8) & 0xFFFF;
+-    var _ly = hex_y + _r * line_h;
++    var _ly2 = hex_y + _r * line_h;
+     draw_set_colour(col_dim);
+-    draw_text(hex_x, _ly, scr_ext_hex(_base, 4));
++    draw_text(hex_x + 2, _ly2, scr_ext_hex(_base, 4));
+     var _ascii = "";
+     for (var _j = 0; _j < 8; _j++) {
+         var _a = (_base + _j) & 0xFFFF;
+         var _c = buffer_peek(cls_buf, _a, buffer_u8);
+-        var _bx = hex_x + 48 + _j * 24;
++        var _bx = hex_x + 52 + _j * 26;
+         if (_a == cursor_addr) {
+             draw_set_colour(col_cursor);
+-            draw_rectangle(_bx - 3, _ly, _bx + 18, _ly + line_h - 1, false);
++            draw_rectangle(_bx - 3, _ly2, _bx + 19, _ly2 + line_h - 1, false);
+         }
+         if (_c == EXT_CLS_NONE) {
+             draw_set_colour(col_border);
+-            draw_text(_bx, _ly, "--");
++            draw_text(_bx, _ly2, "--");
+             _ascii += " ";
+         }
+         else {
+             var _v = buffer_peek(mem_buf, _a, buffer_u8);
+             draw_set_colour(scr_ext_cls_colour(_c));
+-            draw_text(_bx, _ly, scr_ext_hex(_v, 2));
++            draw_text(_bx, _ly2, scr_ext_hex(_v, 2));
+             _ascii += scr_ext_petscii_char(_v);
+         }
+     }
+     draw_set_colour(col_text);
+-    draw_text(hex_x + 48 + 8 * 24 + 8, _ly, _ascii);
++    draw_text(hex_x + 52 + 8 * 26 + 10, _ly2, _ascii);
+ }
++sb_hex.value = hex_top div 8;
++scr_ext_sb_draw(sb_hex);
+ 
+ // ---- Disassembly view ----
+-draw_set_colour(col_panel);
+-draw_rectangle(dis_x - 6, dis_y - 6, dis_x + dis_w, dis_y + dis_rows * line_h + 2, false);
++scr_ext_panel(dis_x, dis_y, dis_w, dis_h, "DISASSEMBLY");
+ var _da = dis_top;
+ for (var _r = 0; _r < dis_rows; _r++) {
+     var _line = scr_ext_disasm_line(_da);
+@@ -96,7 +100,7 @@ for (var _r = 0; _r < dis_rows; _r++) {
+     var _dy = dis_y + _r * line_h;
+     if (cursor_addr >= _da && cursor_addr < _da + _line.size) {
+         draw_set_colour(col_cursor);
+-        draw_rectangle(dis_x - 4, _dy, dis_x + dis_w - 2, _dy + line_h - 1, false);
++        draw_rectangle(dis_x - 4, _dy, dis_x + dis_w - EXT_SB_W - 6, _dy + line_h - 1, false);
+     }
+     if (_line.entry) {
+         draw_set_colour(col_entry);
+@@ -104,24 +108,24 @@ for (var _r = 0; _r < dis_rows; _r++) {
+     }
+     draw_set_colour(col_dim);
+     draw_text(dis_x + 12, _dy, scr_ext_hex(_da, 4));
+-    draw_text(dis_x + 56, _dy, _line.bytes);
++    draw_text(dis_x + 60, _dy, _line.bytes);
+     if (_line.cls == EXT_CLS_NONE) {
+         draw_set_colour(col_dim);
+     }
+     else {
+         draw_set_colour(scr_ext_cls_colour(_line.cls));
+     }
+-    draw_text(dis_x + 140, _dy, _line.text);
++    draw_text(dis_x + 150, _dy, _line.text);
+     _da = (_da + _line.size) & 0xFFFF;
+ }
++sb_dis.value = dis_top;
++scr_ext_sb_draw(sb_dis);
+ 
+ // ---- D64 directory ----
+-var _dir_h = (dir_rows + 1) * line_h;
+-draw_set_colour(col_panel);
+-draw_rectangle(dir_x - 1, dir_y - 4, dir_x + dir_w, dir_y + _dir_h + 2, false);
++scr_ext_panel(dir_x, dir_y, dir_w, dir_h, "D64 DIRECTORY   click = load, Shift+click = overlay");
+ draw_set_colour(col_text);
+ if (buffer_exists(d64_buf)) {
+-    draw_text(dir_x + 4, dir_y, "DISK \"" + d64_disk_name + "\"   " + string(array_length(d64_files)) + " files   (click = load, Shift+click = overlay)");
++    draw_text(dir_x + 4, dir_y, "\"" + d64_disk_name + "\"   " + string(array_length(d64_files)) + " files");
+ }
+ else {
+     draw_set_colour(col_dim);
+@@ -136,7 +140,7 @@ for (var _r = 0; _r < dir_rows; _r++) {
+     var _fy = dir_y + (_r + 1) * line_h;
+     if (_idx == d64_selected) {
+         draw_set_colour(col_cursor);
+-        draw_rectangle(dir_x, _fy, dir_x + dir_w - 1, _fy + line_h - 1, false);
++        draw_rectangle(dir_x, _fy, dir_x + dir_w - EXT_SB_W - 6, _fy + line_h - 1, false);
+     }
+     if (_f.type == 2) {
+         draw_set_colour(col_text);
+@@ -147,13 +151,14 @@ for (var _r = 0; _r < dir_rows; _r++) {
+     draw_text(dir_x + 4, _fy, string(_f.blocks));
+     draw_text(dir_x + 44, _fy, "\"" + _f.name + "\"");
+     draw_text(dir_x + 220, _fy, _f.typename);
+-    draw_text(dir_x + 270, _fy, "T" + string(_f.track) + " S" + string(_f.sector));
++    draw_text(dir_x + 266, _fy, "T" + string(_f.track) + " S" + string(_f.sector));
+ }
++scr_ext_sb_draw(sb_dir);
+ 
+ // ---- Info panel ----
+-draw_set_colour(col_panel);
+-draw_rectangle(info_x - 6, info_y - 6, room_width - 10, room_height - 8, false);
++scr_ext_panel(info_x, info_y, info_w, info_h, "INFO");
+ 
++var _legend_w = 200;
+ var _iy = info_y;
+ draw_set_colour(col_text);
+ draw_text(info_x, _iy, status_text);
+@@ -179,15 +184,15 @@ _iy += line_h;
+ 
+ var _ent_text = "Entries:";
+ var _ent_n = array_length(entries);
+-for (var _e = 0; _e < _ent_n && _e < 4; _e++) {
++for (var _e = 0; _e < _ent_n && _e < 3; _e++) {
+     var _en = entries[_e];
+     _ent_text += "  $" + scr_ext_hex(_en.addr, 4) + " (" + _en.why + ")";
+ }
+-if (_ent_n > 4) {
+-    _ent_text += "  (+" + string(_ent_n - 4) + " more)";
++if (_ent_n > 3) {
++    _ent_text += "  (+" + string(_ent_n - 3) + " more)";
+ }
+ if (_ent_n == 0) {
+-    _ent_text += "  none found - put the cursor on code and press C";
++    _ent_text += "  none - put the cursor on code and press C";
+ }
+ draw_text(info_x, _iy, _ent_text);
+ _iy += line_h * 2;
+@@ -200,16 +205,15 @@ if (hover_addr >= 0) {
+     draw_text(info_x, _iy, "Hover  $" + scr_ext_hex(hover_addr, 4) + "  value $" + scr_ext_hex(buffer_peek(mem_buf, hover_addr, buffer_u8), 2) + "  " + scr_ext_cls_name(buffer_peek(cls_buf, hover_addr, buffer_u8)));
+ }
+ 
+-// Legend with byte counts
+-var _lx = 1110;
+-var _ly2 = info_y;
++// Legend with byte counts, on the right of the info panel
++var _lx = info_x + info_w - _legend_w;
+ for (var _c2 = 0; _c2 < EXT_CLS_COUNT; _c2++) {
++    var _row_y = info_y + _c2 * line_h;
+     draw_set_colour(scr_ext_cls_colour(_c2));
+-    draw_rectangle(_lx, _ly2 + 3, _lx + 9, _ly2 + 12, false);
++    draw_rectangle(_lx, _row_y + 3, _lx + 9, _row_y + 12, false);
+     draw_set_colour(col_dim);
+-    draw_text(_lx + 16, _ly2, scr_ext_cls_name(_c2));
+-    draw_text(_lx + 140, _ly2, string(cls_counts[_c2]));
+-    _ly2 += line_h;
++    draw_text(_lx + 16, _row_y, scr_ext_cls_name(_c2));
++    draw_text(_lx + 130, _row_y, string(cls_counts[_c2]));
+ }
+ 
+ draw_set_colour(c_white);
+diff --git a/objects/obj_ext_main/Step_0.gml b/objects/obj_ext_main/Step_0.gml
+index 0344ad7..b32dda3 100644
+--- a/objects/obj_ext_main/Step_0.gml
++++ b/objects/obj_ext_main/Step_0.gml
+@@ -1,9 +1,12 @@
+ /// @desc Input
+ 
+-var _mx = mouse_x;
+-var _my = mouse_y;
++scr_ext_update_window();
++
++var _mx = device_mouse_x_to_gui(0);
++var _my = device_mouse_y_to_gui(0);
+ var _shift = keyboard_check(vk_shift);
+ var _lmb_pressed = mouse_check_button_pressed(mb_left);
++var _lmb_held = mouse_check_button(mb_left);
+ var _wheel = 0;
+ if (mouse_wheel_up()) {
+     _wheel = -1;
+@@ -12,6 +15,51 @@ if (mouse_wheel_down()) {
+     _wheel = 1;
+ }
+ 
++// ---- Scroll bars (take priority over the panels underneath) ----
++var _n_files = array_length(d64_files);
++
++sb_hex.max_value = 8192 - hex_rows;
++sb_hex.page = hex_rows;
++sb_hex.value = hex_top div 8;
++if (scr_ext_sb_step(sb_hex, _mx, _my, _lmb_pressed, _lmb_held)) {
++    hex_top = sb_hex.value * 8;
++    scr_ext_clamp_hex_top();
++}
++
++sb_dis.max_value = 65535;
++sb_dis.page = dis_rows * 2;
++sb_dis.value = dis_top;
++if (scr_ext_sb_step(sb_dis, _mx, _my, _lmb_pressed, _lmb_held)) {
++    dis_top = scr_ext_align_to_instr(sb_dis.value);
++}
++
++sb_dir.max_value = _n_files - dir_rows;
++if (sb_dir.max_value < 0) {
++    sb_dir.max_value = 0;
++}
++sb_dir.page = dir_rows;
++sb_dir.value = d64_scroll;
++if (scr_ext_sb_step(sb_dir, _mx, _my, _lmb_pressed, _lmb_held)) {
++    d64_scroll = sb_dir.value;
++}
++
++sb_gfx.value = gfx_addr;
++if (scr_ext_sb_step(sb_gfx, _mx, _my, _lmb_pressed, _lmb_held)) {
++    gfx_addr = sb_gfx.value - (sb_gfx.value mod gfx_align);
++    gfx_dirty = true;
++}
++
++var _sb_busy = false;
++if (sb_hex.dragging || sb_dis.dragging || sb_dir.dragging || sb_gfx.dragging) {
++    _sb_busy = true;
++}
++if (_lmb_pressed) {
++    if (scr_ext_sb_hit(sb_hex, _mx, _my) || scr_ext_sb_hit(sb_dis, _mx, _my) || scr_ext_sb_hit(sb_dir, _mx, _my) || scr_ext_sb_hit(sb_gfx, _mx, _my)) {
++        _lmb_pressed = false;
++        _sb_busy = true;
++    }
++}
++
+ // ---- Toolbar ----
+ if (_lmb_pressed) {
+     for (var _i = 0; _i < array_length(buttons); _i++) {
+@@ -24,6 +72,31 @@ if (_lmb_pressed) {
+     }
+ }
+ 
++// ---- Graphics viewer toolbar and swatches ----
++if (_lmb_pressed) {
++    for (var _i = 0; _i < array_length(gfx_buttons); _i++) {
++        var _gb = gfx_buttons[_i];
++        if (point_in_rectangle(_mx, _my, _gb.bx, _gb.by, _gb.bx + _gb.bw, _gb.by + _gb.bh)) {
++            scr_ext_gfx_do_button(_gb, _shift);
++            _lmb_pressed = false;
++            break;
++        }
++    }
++}
++if (_lmb_pressed) {
++    var _sw = scr_ext_gfx_swatch_hit(_mx, _my);
++    if (_sw >= 0) {
++        if (_shift) {
++            gfx_col[_sw] = (gfx_col[_sw] + 15) mod 16;
++        }
++        else {
++            gfx_col[_sw] = (gfx_col[_sw] + 1) mod 16;
++        }
++        gfx_dirty = true;
++        _lmb_pressed = false;
++    }
++}
++
+ // ---- Hotkeys ----
+ if (keyboard_check_pressed(ord("O"))) {
+     scr_ext_do_action("open", _shift);
+@@ -37,6 +110,20 @@ if (keyboard_check_pressed(ord("R"))) {
+ if (keyboard_check_pressed(ord("V"))) {
+     scr_ext_do_action("shade", false);
+ }
++if (keyboard_check_pressed(vk_f11)) {
++    scr_ext_do_action("fullscreen", false);
++}
++if (keyboard_check_pressed(ord("F"))) {
++    scr_ext_gfx_do_button({ action : "gfollow", arg : 0 }, false);
++}
++if (keyboard_check_pressed(ord("G"))) {
++    scr_ext_gfx_do_button({ action : "ggrid", arg : 0 }, false);
++}
++for (var _k = 0; _k < EXT_GFX_MODE_COUNT; _k++) {
++    if (keyboard_check_pressed(ord(string(_k + 1)))) {
++        scr_ext_gfx_do_button({ action : "gmode", arg : _k }, false);
++    }
++}
+ if (keyboard_check_pressed(vk_left)) {
+     scr_ext_set_cursor(cursor_addr - 1, false);
+ }
+@@ -68,7 +155,7 @@ if (point_in_rectangle(_mx, _my, map_x, map_y, map_x + _map_size - 1, map_y + _m
+     var _cx = floor((_mx - map_x) / map_scale);
+     var _cy = floor((_my - map_y) / map_scale);
+     hover_addr = _cy * 256 + _cx;
+-    if (mouse_check_button(mb_left)) {
++    if (_lmb_held && !_sb_busy) {
+         scr_ext_set_cursor(hover_addr, true);
+     }
+     if (_wheel != 0) {
+@@ -76,47 +163,62 @@ if (point_in_rectangle(_mx, _my, map_x, map_y, map_x + _map_size - 1, map_y + _m
+     }
+ }
+ 
++// ---- Graphics viewer canvas ----
++if (point_in_rectangle(_mx, _my, gfx_canvas_x, gfx_canvas_y, gfx_canvas_x + gfx_canvas_w, gfx_canvas_y + gfx_canvas_h)) {
++    var _ga = scr_ext_gfx_addr_at(_mx, _my);
++    if (_ga >= 0) {
++        hover_addr = _ga;
++        if (_lmb_pressed) {
++            cursor_addr = _ga;
++            scr_ext_views_to(_ga);
++        }
++    }
++    if (_wheel != 0) {
++        // Wheel = one row of cells, Shift+wheel = one byte (to find alignment)
++        if (_shift) {
++            gfx_addr = (gfx_addr + _wheel) & 0xFFFF;
++        }
++        else {
++            gfx_addr = (gfx_addr + _wheel * gfx_row_cols * gfx_cell_bytes) & 0xFFFF;
++        }
++        gfx_dirty = true;
++    }
++}
++
+ // ---- Hex view ----
+-var _hex_h = hex_rows * line_h;
+-if (point_in_rectangle(_mx, _my, hex_x, hex_y, hex_x + hex_w, hex_y + _hex_h - 1)) {
++var _hex_text_w = hex_w - EXT_SB_W - 6;
++if (point_in_rectangle(_mx, _my, hex_x, hex_y, hex_x + _hex_text_w, hex_y + hex_rows * line_h - 1)) {
+     var _row = floor((_my - hex_y) / line_h);
+-    var _col = floor((_mx - (hex_x + 48)) / 24);
++    var _col = floor((_mx - (hex_x + 52)) / 26);
+     if (_col >= 0 && _col < 8) {
+         hover_addr = (hex_top + _row * 8 + _col) & 0xFFFF;
+         if (_lmb_pressed) {
+             scr_ext_set_cursor(hover_addr, false);
+             dis_top = scr_ext_align_to_instr(hover_addr);
++            if (gfx_follow) {
++                scr_ext_gfx_follow();
++            }
+         }
+     }
+     if (_wheel != 0) {
+-        var _ht = hex_top + _wheel * 24;
+-        var _hmax = 65536 - hex_rows * 8;
+-        if (_ht < 0) {
+-            _ht = 0;
+-        }
+-        if (_ht > _hmax) {
+-            _ht = _hmax;
+-        }
+-        hex_top = _ht;
++        hex_top += _wheel * 24;
++        scr_ext_clamp_hex_top();
+     }
+ }
+ 
+ // ---- Disassembly view ----
+-var _dis_h = dis_rows * line_h;
+-if (point_in_rectangle(_mx, _my, dis_x, dis_y, dis_x + dis_w, dis_y + _dis_h - 1)) {
++var _dis_text_w = dis_w - EXT_SB_W - 6;
++if (point_in_rectangle(_mx, _my, dis_x, dis_y, dis_x + _dis_text_w, dis_y + dis_rows * line_h - 1)) {
+     var _drow = floor((_my - dis_y) / line_h);
+     if (_drow >= 0 && _drow < dis_rows) {
+         hover_addr = dis_line_addrs[_drow];
+         if (_lmb_pressed) {
+             scr_ext_set_cursor(hover_addr, false);
+-            var _ht2 = (hover_addr & 0xFFF8) - 8 * 8;
+-            if (_ht2 < 0) {
+-                _ht2 = 0;
+-            }
+-            if (_ht2 > 65536 - hex_rows * 8) {
+-                _ht2 = 65536 - hex_rows * 8;
++            hex_top = (hover_addr & 0xFFF8) - 8 * 8;
++            scr_ext_clamp_hex_top();
++            if (gfx_follow) {
++                scr_ext_gfx_follow();
+             }
+-            hex_top = _ht2;
+         }
+     }
+     if (_wheel > 0) {
+@@ -132,13 +234,11 @@ if (point_in_rectangle(_mx, _my, dis_x, dis_y, dis_x + dis_w, dis_y + _dis_h - 1
+ }
+ 
+ // ---- D64 directory ----
+-var _dir_h = (dir_rows + 1) * line_h;
+-if (point_in_rectangle(_mx, _my, dir_x, dir_y, dir_x + dir_w, dir_y + _dir_h)) {
+-    var _n = array_length(d64_files);
++if (point_in_rectangle(_mx, _my, dir_x, dir_y, dir_x + dir_w - EXT_SB_W - 4, dir_y + dir_h)) {
+     if (_wheel != 0) {
+         d64_scroll += _wheel;
+-        if (d64_scroll > _n - dir_rows) {
+-            d64_scroll = _n - dir_rows;
++        if (d64_scroll > _n_files - dir_rows) {
++            d64_scroll = _n_files - dir_rows;
+         }
+         if (d64_scroll < 0) {
+             d64_scroll = 0;
+@@ -147,7 +247,7 @@ if (point_in_rectangle(_mx, _my, dir_x, dir_y, dir_x + dir_w, dir_y + _dir_h)) {
+     if (_lmb_pressed) {
+         var _frow = floor((_my - (dir_y + line_h)) / line_h);
+         var _idx = d64_scroll + _frow;
+-        if (_frow >= 0 && _idx < _n) {
++        if (_frow >= 0 && _frow < dir_rows && _idx < _n_files) {
+             scr_ext_d64_load_entry(_idx, _shift);
+         }
+     }
+diff --git a/objects/obj_ext_main/obj_ext_main.yy b/objects/obj_ext_main/obj_ext_main.yy
+index db69b8d..596eff3 100644
+--- a/objects/obj_ext_main/obj_ext_main.yy
++++ b/objects/obj_ext_main/obj_ext_main.yy
+@@ -4,7 +4,7 @@
+   "eventList":[
+     {"$GMEvent":"v1","%Name":"","collisionObjectId":null,"eventNum":0,"eventType":0,"isDnD":false,"name":"","resourceType":"GMEvent","resourceVersion":"2.0",},
+     {"$GMEvent":"v1","%Name":"","collisionObjectId":null,"eventNum":0,"eventType":3,"isDnD":false,"name":"","resourceType":"GMEvent","resourceVersion":"2.0",},
+-    {"$GMEvent":"v1","%Name":"","collisionObjectId":null,"eventNum":0,"eventType":8,"isDnD":false,"name":"","resourceType":"GMEvent","resourceVersion":"2.0",},
++    {"$GMEvent":"v1","%Name":"","collisionObjectId":null,"eventNum":64,"eventType":8,"isDnD":false,"name":"","resourceType":"GMEvent","resourceVersion":"2.0",},
+     {"$GMEvent":"v1","%Name":"","collisionObjectId":null,"eventNum":0,"eventType":12,"isDnD":false,"name":"","resourceType":"GMEvent","resourceVersion":"2.0",},
+   ],
+   "managed":true,
+diff --git a/scripts/scr_ext_gfx/scr_ext_gfx.gml b/scripts/scr_ext_gfx/scr_ext_gfx.gml
+new file mode 100644
+index 0000000..f43cf62
+--- /dev/null
++++ b/scripts/scr_ext_gfx/scr_ext_gfx.gml
+@@ -0,0 +1,418 @@
++/// @desc scr_ext_c64_palette()
++/// The 16 C64 colours (VICE "Pepto" style) as [r, g, b].
++function scr_ext_c64_palette() {
++    return [
++        [0x00, 0x00, 0x00], [0xFF, 0xFF, 0xFF], [0x68, 0x37, 0x2B], [0x70, 0xA4, 0xB2],
++        [0x6F, 0x3D, 0x86], [0x58, 0x8D, 0x43], [0x35, 0x28, 0x79], [0xB8, 0xC7, 0x6F],
++        [0x6F, 0x4F, 0x25], [0x43, 0x39, 0x00], [0x9A, 0x67, 0x59], [0x44, 0x44, 0x44],
++        [0x6C, 0x6C, 0x6C], [0x9A, 0xD2, 0x84], [0x6C, 0x5E, 0xB5], [0x95, 0x95, 0x95]
++    ];
++}
++
++/// @desc scr_ext_rgba(r, g, b) - u32 that pokes as R,G,B,A bytes into a surface buffer
++function scr_ext_rgba(_r, _g, _b) {
++    return (0xFF << 24) | (_b << 16) | (_g << 8) | _r;
++}
++
++/// @desc scr_ext_gfx_mode_name(mode)
++function scr_ext_gfx_mode_name(_m) {
++    switch (_m) {
++        case EXT_GFX_CHAR_HR: return "HR Char";
++        case EXT_GFX_CHAR_MC: return "MC Char";
++        case EXT_GFX_SPR_HR:  return "HR Sprite";
++        case EXT_GFX_SPR_MC:  return "MC Sprite";
++        case EXT_GFX_BMP_HR:  return "HR Bitmap";
++        case EXT_GFX_BMP_MC:  return "MC Bitmap";
++    }
++    return "?";
++}
++
++/// @desc scr_ext_gfx_is_mc() - true for the multicolour modes
++function scr_ext_gfx_is_mc() {
++    if (gfx_mode == EXT_GFX_CHAR_MC || gfx_mode == EXT_GFX_SPR_MC || gfx_mode == EXT_GFX_BMP_MC) {
++        return true;
++    }
++    return false;
++}
++
++/// @desc scr_ext_gfx_is_sprite()
++function scr_ext_gfx_is_sprite() {
++    if (gfx_mode == EXT_GFX_SPR_HR || gfx_mode == EXT_GFX_SPR_MC) {
++        return true;
++    }
++    return false;
++}
++
++/// @desc scr_ext_gfx_is_bitmap()
++function scr_ext_gfx_is_bitmap() {
++    if (gfx_mode == EXT_GFX_BMP_HR || gfx_mode == EXT_GFX_BMP_MC) {
++        return true;
++    }
++    return false;
++}
++
++/// @desc scr_ext_gfx_build_buttons()
++/// Viewer toolbar: row 1 = modes, row 2 = columns / follow / grid / colour swatches.
++function scr_ext_gfx_build_buttons() {
++    gfx_buttons = [];
++    var _bx = gfx_x;
++    var _by = gfx_y;
++    var _bw = floor((gfx_w - 5 * 4) / EXT_GFX_MODE_COUNT);
++    if (_bw > 100) {
++        _bw = 100;
++    }
++    for (var _m = 0; _m < EXT_GFX_MODE_COUNT; _m++) {
++        array_push(gfx_buttons, { bx : _bx, by : _by, bw : _bw, bh : 22, label : scr_ext_gfx_mode_name(_m), action : "gmode", arg : _m });
++        _bx += _bw + 4;
++    }
++
++    _bx = gfx_x;
++    _by = gfx_y + 28;
++    array_push(gfx_buttons, { bx : _bx, by : _by, bw : 60, bh : 22, label : "Cols -", action : "gcols", arg : -1 });
++    _bx += 64;
++    array_push(gfx_buttons, { bx : _bx, by : _by, bw : 60, bh : 22, label : "Cols +", action : "gcols", arg : 1 });
++    _bx += 64;
++    array_push(gfx_buttons, { bx : _bx, by : _by, bw : 80, bh : 22, label : "Follow [F]", action : "gfollow", arg : 0 });
++    _bx += 84;
++    array_push(gfx_buttons, { bx : _bx, by : _by, bw : 70, bh : 22, label : "Grid [G]", action : "ggrid", arg : 0 });
++    _bx += 84;
++
++    // Colour swatches: BG, MC1, MC2, FG
++    gfx_swatch_x = _bx;
++    gfx_swatch_y = _by;
++
++    gfx_canvas_x = gfx_x;
++    gfx_canvas_y = gfx_y + 56;
++    gfx_canvas_w = gfx_w - EXT_SB_W - 8;
++    gfx_canvas_h = gfx_h - 56;
++    if (gfx_canvas_h < 32) {
++        gfx_canvas_h = 32;
++    }
++}
++
++/// @desc scr_ext_gfx_setup()
++/// Works out cell size, columns, rows, zoom and image size for the current mode.
++function scr_ext_gfx_setup() {
++    var _cols = gfx_char_cols;
++    gfx_cell_w = 8;
++    gfx_cell_h = 8;
++    gfx_cell_bytes = 8;
++    gfx_gap = 0;
++    gfx_align = 8;
++
++    if (scr_ext_gfx_is_sprite()) {
++        _cols = gfx_spr_cols;
++        gfx_cell_w = 24;
++        gfx_cell_h = 21;
++        gfx_cell_bytes = 64;
++        gfx_gap = 1;
++        gfx_align = 64;
++    }
++    if (scr_ext_gfx_is_bitmap()) {
++        _cols = 40;
++    }
++    gfx_row_cols = _cols;
++
++    var _pitch_w = gfx_cell_w + gfx_gap;
++    var _pitch_h = gfx_cell_h + gfx_gap;
++
++    gfx_zoom = floor(gfx_canvas_w / (_cols * _pitch_w));
++    if (scr_ext_gfx_is_bitmap()) {
++        var _zh = floor(gfx_canvas_h / (25 * _pitch_h));
++        if (_zh < gfx_zoom) {
++            gfx_zoom = _zh;
++        }
++    }
++    if (gfx_zoom > 8) {
++        gfx_zoom = 8;
++    }
++    if (gfx_zoom < 1) {
++        gfx_zoom = 1;
++    }
++
++    if (scr_ext_gfx_is_bitmap()) {
++        gfx_rows = 25;
++    }
++    else {
++        gfx_rows = floor(gfx_canvas_h / (_pitch_h * gfx_zoom));
++        if (gfx_rows < 1) {
++            gfx_rows = 1;
++        }
++    }
++
++    gfx_img_w = _cols * _pitch_w;
++    gfx_img_h = gfx_rows * _pitch_h;
++    gfx_screen_bytes = _cols * gfx_rows * gfx_cell_bytes;
++
++    sb_gfx.max_value = 65535;
++    sb_gfx.page = gfx_screen_bytes;
++    gfx_dirty = true;
++}
++
++/// @desc scr_ext_gfx_follow()
++/// Moves the viewer to the cursor, aligned to the mode's natural boundary.
++function scr_ext_gfx_follow() {
++    gfx_addr = cursor_addr - (cursor_addr mod gfx_align);
++    gfx_dirty = true;
++}
++
++/// @desc scr_ext_gfx_do_button(button, shift)
++function scr_ext_gfx_do_button(_b, _shift) {
++    switch (_b.action) {
++        case "gmode":
++            gfx_mode = _b.arg;
++            scr_ext_gfx_setup();
++            if (gfx_follow) {
++                scr_ext_gfx_follow();
++            }
++            else {
++                gfx_addr = gfx_addr - (gfx_addr mod gfx_align);
++            }
++            break;
++
++        case "gcols":
++            if (scr_ext_gfx_is_sprite()) {
++                gfx_spr_cols += _b.arg;
++                if (gfx_spr_cols < 1) {
++                    gfx_spr_cols = 1;
++                }
++                if (gfx_spr_cols > 16) {
++                    gfx_spr_cols = 16;
++                }
++            }
++            else if (!scr_ext_gfx_is_bitmap()) {
++                gfx_char_cols += _b.arg;
++                if (gfx_char_cols < 1) {
++                    gfx_char_cols = 1;
++                }
++                if (gfx_char_cols > 64) {
++                    gfx_char_cols = 64;
++                }
++            }
++            scr_ext_gfx_setup();
++            break;
++
++        case "gfollow":
++            if (gfx_follow) {
++                gfx_follow = false;
++            }
++            else {
++                gfx_follow = true;
++                scr_ext_gfx_follow();
++            }
++            break;
++
++        case "ggrid":
++            if (gfx_grid) {
++                gfx_grid = false;
++            }
++            else {
++                gfx_grid = true;
++            }
++            break;
++    }
++}
++
++/// @desc scr_ext_gfx_swatch_hit(mx, my) - swatch index 0..3 under the mouse, or -1
++function scr_ext_gfx_swatch_hit(_mx, _my) {
++    for (var _i = 0; _i < 4; _i++) {
++        var _sx = gfx_swatch_x + _i * 46;
++        if (point_in_rectangle(_mx, _my, _sx, gfx_swatch_y, _sx + 40, gfx_swatch_y + 22)) {
++            return _i;
++        }
++    }
++    return -1;
++}
++
++/// @desc scr_ext_gfx_render()
++/// Renders the current view of memory into gfx_surf via a pixel buffer.
++function scr_ext_gfx_render() {
++    var _size = gfx_img_w * gfx_img_h * 4;
++    if (buffer_exists(gfx_buf)) {
++        if (buffer_get_size(gfx_buf) != _size) {
++            buffer_delete(gfx_buf);
++            gfx_buf = -1;
++        }
++    }
++    if (!buffer_exists(gfx_buf)) {
++        gfx_buf = buffer_create(_size, buffer_fixed, 1);
++    }
++    if (surface_exists(gfx_surf)) {
++        if (surface_get_width(gfx_surf) != gfx_img_w || surface_get_height(gfx_surf) != gfx_img_h) {
++            surface_free(gfx_surf);
++            gfx_surf = -1;
++        }
++    }
++    if (!surface_exists(gfx_surf)) {
++        gfx_surf = surface_create(gfx_img_w, gfx_img_h);
++    }
++
++    buffer_fill(gfx_buf, 0, buffer_u32, gfx_gap_u32, _size);
++
++    var _pal4 = [
++        c64_pal_u32[gfx_col[0]],
++        c64_pal_u32[gfx_col[1]],
++        c64_pal_u32[gfx_col[2]],
++        c64_pal_u32[gfx_col[3]]
++    ];
++    var _bg = _pal4[0];
++    var _fg = _pal4[3];
++    var _none = gfx_none_u32;
++    var _mc = scr_ext_gfx_is_mc();
++    var _spr = scr_ext_gfx_is_sprite();
++
++    var _pitch_w = gfx_cell_w + gfx_gap;
++    var _pitch_h = gfx_cell_h + gfx_gap;
++    var _bytes_per_row = gfx_cell_w div 8;
++    var _cells = gfx_row_cols * gfx_rows;
++    var _img_w = gfx_img_w;
++
++    for (var _cell = 0; _cell < _cells; _cell++) {
++        var _ox = (_cell mod gfx_row_cols) * _pitch_w;
++        var _oy = (_cell div gfx_row_cols) * _pitch_h;
++        var _cell_base = gfx_addr + _cell * gfx_cell_bytes;
++
++        for (var _row = 0; _row < gfx_cell_h; _row++) {
++            for (var _bc = 0; _bc < _bytes_per_row; _bc++) {
++                var _a = _cell_base + _row;
++                if (_spr) {
++                    _a = _cell_base + _row * 3 + _bc;
++                }
++                _a = _a & 0xFFFF;
++                var _off = (((_oy + _row) * _img_w) + _ox + _bc * 8) * 4;
++
++                if (buffer_peek(loaded_buf, _a, buffer_u8) == 0) {
++                    for (var _p = 0; _p < 8; _p++) {
++                        buffer_poke(gfx_buf, _off + _p * 4, buffer_u32, _none);
++                    }
++                }
++                else {
++                    var _v = buffer_peek(mem_buf, _a, buffer_u8);
++                    if (_mc) {
++                        for (var _pair = 0; _pair < 4; _pair++) {
++                            var _col = _pal4[(_v >> (6 - _pair * 2)) & 3];
++                            buffer_poke(gfx_buf, _off + _pair * 8, buffer_u32, _col);
++                            buffer_poke(gfx_buf, _off + _pair * 8 + 4, buffer_u32, _col);
++                        }
++                    }
++                    else {
++                        for (var _bit = 0; _bit < 8; _bit++) {
++                            if (((_v >> (7 - _bit)) & 1) == 1) {
++                                buffer_poke(gfx_buf, _off + _bit * 4, buffer_u32, _fg);
++                            }
++                            else {
++                                buffer_poke(gfx_buf, _off + _bit * 4, buffer_u32, _bg);
++                            }
++                        }
++                    }
++                }
++            }
++        }
++    }
++
++    buffer_set_surface(gfx_buf, gfx_surf, 0);
++    gfx_dirty = false;
++}
++
++/// @desc scr_ext_gfx_addr_at(mx, my)
++/// C64 address of the byte under a GUI point in the viewer canvas, or -1.
++function scr_ext_gfx_addr_at(_mx, _my) {
++    var _ix = floor((_mx - gfx_canvas_x) / gfx_zoom);
++    var _iy = floor((_my - gfx_canvas_y) / gfx_zoom);
++    if (_ix < 0 || _iy < 0 || _ix >= gfx_img_w || _iy >= gfx_img_h) {
++        return -1;
++    }
++    var _pitch_w = gfx_cell_w + gfx_gap;
++    var _pitch_h = gfx_cell_h + gfx_gap;
++    var _cx = _ix div _pitch_w;
++    var _cy = _iy div _pitch_h;
++    var _px = _ix mod _pitch_w;
++    var _py = _iy mod _pitch_h;
++    if (_px >= gfx_cell_w || _py >= gfx_cell_h) {
++        return -1;
++    }
++    var _cell = _cy * gfx_row_cols + _cx;
++    var _a = gfx_addr + _cell * gfx_cell_bytes;
++    if (scr_ext_gfx_is_sprite()) {
++        _a += _py * 3 + (_px div 8);
++    }
++    else {
++        _a += _py;
++    }
++    return _a & 0xFFFF;
++}
++
++/// @desc scr_ext_gfx_draw()
++/// Draws the viewer: toolbar, swatches, canvas, grid, cursor cell and scroll bar.
++function scr_ext_gfx_draw() {
++    var _title = "GRAPHICS  " + scr_ext_gfx_mode_name(gfx_mode) + "   $" + scr_ext_hex(gfx_addr, 4) + "-$" + scr_ext_hex(gfx_addr + gfx_screen_bytes - 1, 4) + "   zoom x" + string(gfx_zoom);
++    scr_ext_panel(gfx_x, gfx_y, gfx_w, gfx_h, _title);
++
++    for (var _i = 0; _i < array_length(gfx_buttons); _i++) {
++        var _b = gfx_buttons[_i];
++        var _active = false;
++        if (_b.action == "gmode" && _b.arg == gfx_mode) {
++            _active = true;
++        }
++        if (_b.action == "gfollow" && gfx_follow) {
++            _active = true;
++        }
++        if (_b.action == "ggrid" && gfx_grid) {
++            _active = true;
++        }
++        scr_ext_draw_button(_b, _active);
++    }
++
++    // Swatches
++    var _sw_names = ["BG", "M1", "M2", "FG"];
++    for (var _s = 0; _s < 4; _s++) {
++        var _sx = gfx_swatch_x + _s * 46;
++        var _rgb = c64_pal[gfx_col[_s]];
++        draw_set_colour(make_colour_rgb(_rgb[0], _rgb[1], _rgb[2]));
++        draw_rectangle(_sx, gfx_swatch_y, _sx + 40, gfx_swatch_y + 22, false);
++        draw_set_colour(col_border);
++        draw_rectangle(_sx, gfx_swatch_y, _sx + 40, gfx_swatch_y + 22, true);
++        draw_set_colour(c_black);
++        draw_text(_sx + 4, gfx_swatch_y + 5, _sw_names[_s]);
++        draw_set_colour(c_white);
++        draw_text(_sx + 3, gfx_swatch_y + 4, _sw_names[_s]);
++    }
++
++    if (gfx_dirty || !surface_exists(gfx_surf)) {
++        scr_ext_gfx_render();
++    }
++    draw_surface_ext(gfx_surf, gfx_canvas_x, gfx_canvas_y, gfx_zoom, gfx_zoom, 0, c_white, 1);
++
++    var _pitch_w = (gfx_cell_w + gfx_gap) * gfx_zoom;
++    var _pitch_h = (gfx_cell_h + gfx_gap) * gfx_zoom;
++    var _iw = gfx_img_w * gfx_zoom;
++    var _ih = gfx_img_h * gfx_zoom;
++
++    // Cell grid (characters and bitmaps; sprites already have a gap)
++    if (gfx_grid && gfx_gap == 0 && gfx_zoom >= 2) {
++        draw_set_alpha(0.25);
++        draw_set_colour(col_border);
++        for (var _gx = 1; _gx < gfx_row_cols; _gx++) {
++            var _lx = gfx_canvas_x + _gx * _pitch_w;
++            draw_line(_lx, gfx_canvas_y, _lx, gfx_canvas_y + _ih);
++        }
++        for (var _gy = 1; _gy < gfx_rows; _gy++) {
++            var _ly = gfx_canvas_y + _gy * _pitch_h;
++            draw_line(gfx_canvas_x, _ly, gfx_canvas_x + _iw, _ly);
++        }
++        draw_set_alpha(1);
++    }
++
++    // Cursor cell
++    var _rel = (cursor_addr - gfx_addr + 65536) mod 65536;
++    if (_rel < gfx_screen_bytes) {
++        var _cell = _rel div gfx_cell_bytes;
++        var _cx = gfx_canvas_x + (_cell mod gfx_row_cols) * _pitch_w;
++        var _cy = gfx_canvas_y + (_cell div gfx_row_cols) * _pitch_h;
++        draw_set_colour(c_white);
++        draw_rectangle(_cx - 1, _cy - 1, _cx + gfx_cell_w * gfx_zoom, _cy + gfx_cell_h * gfx_zoom, true);
++    }
++
++    sb_gfx.value = gfx_addr;
++    scr_ext_sb_draw(sb_gfx);
++}
+diff --git a/scripts/scr_ext_gfx/scr_ext_gfx.yy b/scripts/scr_ext_gfx/scr_ext_gfx.yy
+new file mode 100644
+index 0000000..de6faa4
+--- /dev/null
++++ b/scripts/scr_ext_gfx/scr_ext_gfx.yy
+@@ -0,0 +1,13 @@
++{
++  "$GMScript":"v1",
++  "%Name":"scr_ext_gfx",
++  "isCompatibility":false,
++  "isDnD":false,
++  "name":"scr_ext_gfx",
++  "parent":{
++    "name":"Scripts",
++    "path":"folders/Scripts.yy",
++  },
++  "resourceType":"GMScript",
++  "resourceVersion":"2.0",
++}
+\ No newline at end of file
+diff --git a/scripts/scr_ext_macros/scr_ext_macros.gml b/scripts/scr_ext_macros/scr_ext_macros.gml
+index eaeaad6..61e66e8 100644
+--- a/scripts/scr_ext_macros/scr_ext_macros.gml
++++ b/scripts/scr_ext_macros/scr_ext_macros.gml
+@@ -55,3 +55,15 @@
+ #macro EXT_SEQ_LENGTH    12
+ #macro EXT_LIKELY_SCORE  14
+ #macro EXT_DOUBT_SCORE   6
++
++// Graphics viewer modes
++#macro EXT_GFX_CHAR_HR    0
++#macro EXT_GFX_CHAR_MC    1
++#macro EXT_GFX_SPR_HR     2
++#macro EXT_GFX_SPR_MC     3
++#macro EXT_GFX_BMP_HR     4
++#macro EXT_GFX_BMP_MC     5
++#macro EXT_GFX_MODE_COUNT 6
++
++// Scroll bar width (GUI pixels)
++#macro EXT_SB_W 14
+diff --git a/scripts/scr_ext_ui/scr_ext_ui.gml b/scripts/scr_ext_ui/scr_ext_ui.gml
+new file mode 100644
+index 0000000..6fdbd9b
+--- /dev/null
++++ b/scripts/scr_ext_ui/scr_ext_ui.gml
+@@ -0,0 +1,287 @@
++/// @desc scr_ext_update_window()
++/// Watches the window size; on change sets the GUI scale and rebuilds the layout.
++/// 4K and other high-DPI displays get a 2x GUI scale so text stays readable.
++function scr_ext_update_window() {
++    var _ww = window_get_width();
++    var _wh = window_get_height();
++    if (_ww <= 0 || _wh <= 0) {
++        return;
++    }
++    if (_ww == last_win_w && _wh == last_win_h) {
++        return;
++    }
++    last_win_w = _ww;
++    last_win_h = _wh;
++
++    ui_scale = 1;
++    if (_wh >= 1700) {
++        ui_scale = 2;
++    }
++    gui_w = floor(_ww / ui_scale);
++    gui_h = floor(_wh / ui_scale);
++    display_set_gui_size(gui_w, gui_h);
++    scr_ext_layout();
++}
++
++/// @desc scr_ext_layout()
++/// Positions every panel from gui_w / gui_h.
++///
++///  +-------------------------------------------------------------+
++///  | toolbar                                                     |
++///  +-----------+---------------------------+---------------------+
++///  | memory    | graphics viewer           | hex                 |
++///  | map       |                           |                     |
++///  |           |                           +---------------------+
++///  +-----------+                           | disassembly         |
++///  | D64 dir   +---------------------------+                     |
++///  |           | info / legend             |                     |
++///  +-----------+---------------------------+---------------------+
++function scr_ext_layout() {
++    var _pad = ui_pad;
++    var _title_h = line_h + 6;
++    var _top = top_h + _pad + _title_h;
++
++    // ---- Memory map: biggest whole scale that leaves room for the D64 list ----
++    var _by_h = floor((gui_h - _top - 240) / 256);
++    var _by_w = floor((gui_w * 0.36) / 256);
++    map_scale = _by_h;
++    if (_by_w < map_scale) {
++        map_scale = _by_w;
++    }
++    if (map_scale < 1) {
++        map_scale = 1;
++    }
++    var _map_size = 256 * map_scale;
++    map_x = _pad + 8;
++    map_y = _top;
++
++    // ---- D64 directory under the map ----
++    dir_x = map_x;
++    dir_y = map_y + _map_size + _pad + _title_h;
++    dir_w = _map_size;
++    dir_h = gui_h - dir_y - _pad;
++    dir_rows = floor(dir_h / line_h) - 1;
++    if (dir_rows < 1) {
++        dir_rows = 1;
++    }
++
++    // ---- Right column: hex on top, disassembly below ----
++    var _col2_x = map_x + _map_size + _pad * 2 + 8;
++    var _rc_w = floor((gui_w - _col2_x - _pad * 2) * 0.42);
++    if (_rc_w < 470) {
++        _rc_w = 470;
++    }
++    var _rc_x = gui_w - _pad - _rc_w;
++    var _col_h = gui_h - _top - _pad;
++
++    hex_x = _rc_x;
++    hex_y = _top;
++    hex_w = _rc_w;
++    hex_h = floor(_col_h * 0.38);
++    hex_rows = floor((hex_h - 8) / line_h);
++    if (hex_rows < 4) {
++        hex_rows = 4;
++    }
++
++    dis_x = _rc_x;
++    dis_y = hex_y + hex_h + _pad + _title_h;
++    dis_w = _rc_w;
++    dis_h = gui_h - dis_y - _pad;
++    dis_rows = floor((dis_h - 8) / line_h);
++    if (dis_rows < 4) {
++        dis_rows = 4;
++    }
++    dis_line_addrs = array_create(dis_rows, 0);
++
++    // ---- Middle column: graphics viewer on top, info below ----
++    gfx_x = _col2_x;
++    gfx_y = _top;
++    gfx_w = _rc_x - _pad - _col2_x;
++    gfx_h = gui_h - _top - _pad - info_h - _pad - _title_h;
++
++    info_x = gfx_x;
++    info_y = gfx_y + gfx_h + _pad + _title_h;
++    info_w = gfx_w;
++
++    scr_ext_gfx_build_buttons();
++    scr_ext_gfx_setup();
++
++    // ---- Scroll bars ----
++    sb_hex.x = hex_x + hex_w - EXT_SB_W - 2;
++    sb_hex.y = hex_y + 2;
++    sb_hex.h = hex_h - 4;
++
++    sb_dis.x = dis_x + dis_w - EXT_SB_W - 2;
++    sb_dis.y = dis_y + 2;
++    sb_dis.h = dis_h - 4;
++
++    sb_dir.x = dir_x + dir_w - EXT_SB_W - 2;
++    sb_dir.y = dir_y + line_h + 2;
++    sb_dir.h = dir_h - line_h - 4;
++
++    sb_gfx.x = gfx_x + gfx_w - EXT_SB_W - 2;
++    sb_gfx.y = gfx_canvas_y;
++    sb_gfx.h = gfx_canvas_h;
++
++    // Hex top must stay inside memory with the new row count
++    scr_ext_clamp_hex_top();
++    map_dirty = true;
++}
++
++/// @desc scr_ext_clamp_hex_top()
++function scr_ext_clamp_hex_top() {
++    var _hmax = 65536 - hex_rows * 8;
++    if (hex_top > _hmax) {
++        hex_top = _hmax;
++    }
++    if (hex_top < 0) {
++        hex_top = 0;
++    }
++    hex_top = hex_top - (hex_top mod 8);
++}
++
++/// @desc scr_ext_sb_create()
++/// Vertical scroll bar. value runs 0..max_value, page = visible amount.
++function scr_ext_sb_create() {
++    return {
++        x         : 0,
++        y         : 0,
++        w         : EXT_SB_W,
++        h         : 100,
++        value     : 0,
++        max_value : 0,
++        page      : 1,
++        dragging  : false,
++        grab      : 0
++    };
++}
++
++/// @desc scr_ext_sb_thumb(sb) - returns [thumb_y, thumb_h]
++function scr_ext_sb_thumb(_sb) {
++    var _th = _sb.h;
++    if (_sb.max_value > 0) {
++        _th = floor(_sb.h * _sb.page / (_sb.max_value + _sb.page));
++    }
++    if (_th < 20) {
++        _th = 20;
++    }
++    if (_th > _sb.h) {
++        _th = _sb.h;
++    }
++    var _ty = _sb.y;
++    if (_sb.max_value > 0) {
++        _ty = _sb.y + floor((_sb.h - _th) * (_sb.value / _sb.max_value));
++    }
++    return [_ty, _th];
++}
++
++/// @desc scr_ext_sb_step(sb, mx, my, pressed, held)
++/// Returns true if the value changed. Sets sb.dragging while the thumb is held.
++function scr_ext_sb_step(_sb, _mx, _my, _pressed, _held) {
++    if (!_held) {
++        _sb.dragging = false;
++    }
++    var _t = scr_ext_sb_thumb(_sb);
++    var _ty = _t[0];
++    var _th = _t[1];
++
++    if (_pressed) {
++        if (point_in_rectangle(_mx, _my, _sb.x, _sb.y, _sb.x + _sb.w, _sb.y + _sb.h)) {
++            if (_my >= _ty && _my < _ty + _th) {
++                _sb.dragging = true;
++                _sb.grab = _my - _ty;
++                return false;
++            }
++            // Click in the track: page up / down
++            var _v = _sb.value;
++            if (_my < _ty) {
++                _v -= _sb.page;
++            }
++            else {
++                _v += _sb.page;
++            }
++            if (_v < 0) {
++                _v = 0;
++            }
++            if (_v > _sb.max_value) {
++                _v = _sb.max_value;
++            }
++            _sb.value = _v;
++            return true;
++        }
++    }
++
++    if (_sb.dragging) {
++        var _range = _sb.h - _th;
++        var _nv = 0;
++        if (_range > 0) {
++            _nv = round(((_my - _sb.grab) - _sb.y) / _range * _sb.max_value);
++        }
++        if (_nv < 0) {
++            _nv = 0;
++        }
++        if (_nv > _sb.max_value) {
++            _nv = _sb.max_value;
++        }
++        if (_nv != _sb.value) {
++            _sb.value = _nv;
++            return true;
++        }
++    }
++    return false;
++}
++
++/// @desc scr_ext_sb_hit(sb, mx, my) - true if the point is over the bar
++function scr_ext_sb_hit(_sb, _mx, _my) {
++    return point_in_rectangle(_mx, _my, _sb.x, _sb.y, _sb.x + _sb.w, _sb.y + _sb.h);
++}
++
++/// @desc scr_ext_sb_draw(sb)
++function scr_ext_sb_draw(_sb) {
++    draw_set_colour(col_sb_track);
++    draw_rectangle(_sb.x, _sb.y, _sb.x + _sb.w, _sb.y + _sb.h, false);
++    var _t = scr_ext_sb_thumb(_sb);
++    if (_sb.dragging) {
++        draw_set_colour(col_button_hi);
++    }
++    else {
++        draw_set_colour(col_sb_thumb);
++    }
++    draw_rectangle(_sb.x + 2, _t[0], _sb.x + _sb.w - 2, _t[0] + _t[1], false);
++}
++
++/// @desc scr_ext_draw_button(button, active)
++function scr_ext_draw_button(_b, _active) {
++    var _mx = device_mouse_x_to_gui(0);
++    var _my = device_mouse_y_to_gui(0);
++    var _over = point_in_rectangle(_mx, _my, _b.bx, _b.by, _b.bx + _b.bw, _b.by + _b.bh);
++    if (_active) {
++        draw_set_colour(col_button_on);
++    }
++    else if (_over) {
++        draw_set_colour(col_button_hi);
++    }
++    else {
++        draw_set_colour(col_button);
++    }
++    draw_rectangle(_b.bx, _b.by, _b.bx + _b.bw, _b.by + _b.bh, false);
++    draw_set_colour(col_border);
++    draw_rectangle(_b.bx, _b.by, _b.bx + _b.bw, _b.by + _b.bh, true);
++    draw_set_colour(col_text);
++    draw_set_halign(fa_center);
++    draw_text(_b.bx + _b.bw / 2, _b.by + 5, _b.label);
++    draw_set_halign(fa_left);
++}
++
++/// @desc scr_ext_panel(x, y, w, h, title)
++/// Draws a panel background with an optional title strip above it.
++function scr_ext_panel(_x, _y, _w, _h, _title) {
++    draw_set_colour(col_panel);
++    draw_rectangle(_x - 6, _y - 6, _x + _w, _y + _h, false);
++    draw_set_colour(col_border);
++    draw_rectangle(_x - 6, _y - 6, _x + _w, _y + _h, true);
++    if (_title != "") {
++        draw_set_colour(col_title);
++        draw_text(_x, _y - 6 - line_h - 2, _title);
++    }
++}
+diff --git a/scripts/scr_ext_ui/scr_ext_ui.yy b/scripts/scr_ext_ui/scr_ext_ui.yy
+new file mode 100644
+index 0000000..8f1966d
+--- /dev/null
++++ b/scripts/scr_ext_ui/scr_ext_ui.yy
+@@ -0,0 +1,13 @@
++{
++  "$GMScript":"v1",
++  "%Name":"scr_ext_ui",
++  "isCompatibility":false,
++  "isDnD":false,
++  "name":"scr_ext_ui",
++  "parent":{
++    "name":"Scripts",
++    "path":"folders/Scripts.yy",
++  },
++  "resourceType":"GMScript",
++  "resourceVersion":"2.0",
++}
+\ No newline at end of file
+diff --git a/scripts/scr_ext_util/scr_ext_util.gml b/scripts/scr_ext_util/scr_ext_util.gml
+index 9d235bb..965256d 100644
+--- a/scripts/scr_ext_util/scr_ext_util.gml
++++ b/scripts/scr_ext_util/scr_ext_util.gml
+@@ -42,23 +42,26 @@ function scr_ext_petscii_char(_v) {
+ }
+ 
+ /// @desc scr_ext_set_cursor(addr, move_views)
+-/// Sets the cursor; optionally scrolls the hex and disassembly views to it.
++/// Sets the cursor; optionally scrolls the hex and disassembly views to it,
++/// and moves the graphics viewer too when Follow is on.
+ function scr_ext_set_cursor(_addr, _move_views) {
+     cursor_addr = _addr & 0xFFFF;
+     if (_move_views) {
+-        var _ht = (cursor_addr & 0xFFF8) - 8 * 8;
+-        if (_ht < 0) {
+-            _ht = 0;
++        scr_ext_views_to(cursor_addr);
++        if (gfx_follow) {
++            scr_ext_gfx_follow();
+         }
+-        var _hmax = 65536 - hex_rows * 8;
+-        if (_ht > _hmax) {
+-            _ht = _hmax;
+-        }
+-        hex_top = _ht;
+-        dis_top = scr_ext_align_to_instr(cursor_addr);
+     }
+ }
+ 
++/// @desc scr_ext_views_to(addr)
++/// Scrolls the hex and disassembly views to an address (the viewer stays put).
++function scr_ext_views_to(_addr) {
++    hex_top = (_addr & 0xFFF8) - 8 * 8;
++    scr_ext_clamp_hex_top();
++    dis_top = scr_ext_align_to_instr(_addr);
++}
++
+ /// @desc scr_ext_do_action(action, overlay)
+ /// Shared handler for toolbar buttons and hotkeys.
+ function scr_ext_do_action(_action, _overlay) {
+@@ -86,6 +89,15 @@ function scr_ext_do_action(_action, _overlay) {
+             scr_ext_analyse();
+             break;
+ 
++        case "fullscreen":
++            if (window_get_fullscreen()) {
++                window_set_fullscreen(false);
++            }
++            else {
++                window_set_fullscreen(true);
++            }
++            break;
++
+         case "shade":
+             if (map_shaded) {
+                 map_shaded = false;
