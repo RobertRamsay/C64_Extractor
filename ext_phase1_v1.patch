@@ -1,0 +1,2256 @@
+diff --git a/C64_Extractor.yyp b/C64_Extractor.yyp
+index 918992b..abc8a25 100644
+--- a/C64_Extractor.yyp
++++ b/C64_Extractor.yyp
+@@ -9,7 +9,10 @@
+     "name":"Default",
+   },
+   "defaultScriptType":1,
+-  "Folders":[],
++  "Folders":[
++    {"$GMFolder":"","%Name":"Objects","folderPath":"folders/Objects.yy","name":"Objects","resourceType":"GMFolder","resourceVersion":"2.0",},
++    {"$GMFolder":"","%Name":"Scripts","folderPath":"folders/Scripts.yy","name":"Scripts","resourceType":"GMFolder","resourceVersion":"2.0",},
++  ],
+   "ForcedPrefabProjectReferences":[],
+   "IncludedFiles":[],
+   "isEcma":false,
+@@ -19,7 +22,16 @@
+   },
+   "name":"C64_Extractor",
+   "resources":[
++    {"id":{"name":"obj_ext_main","path":"objects/obj_ext_main/obj_ext_main.yy",},},
+     {"id":{"name":"Room1","path":"rooms/Room1/Room1.yy",},},
++    {"id":{"name":"scr_ext_analyse","path":"scripts/scr_ext_analyse/scr_ext_analyse.yy",},},
++    {"id":{"name":"scr_ext_d64","path":"scripts/scr_ext_d64/scr_ext_d64.yy",},},
++    {"id":{"name":"scr_ext_disasm","path":"scripts/scr_ext_disasm/scr_ext_disasm.yy",},},
++    {"id":{"name":"scr_ext_loader","path":"scripts/scr_ext_loader/scr_ext_loader.yy",},},
++    {"id":{"name":"scr_ext_macros","path":"scripts/scr_ext_macros/scr_ext_macros.yy",},},
++    {"id":{"name":"scr_ext_map","path":"scripts/scr_ext_map/scr_ext_map.yy",},},
++    {"id":{"name":"scr_ext_opcode_table","path":"scripts/scr_ext_opcode_table/scr_ext_opcode_table.yy",},},
++    {"id":{"name":"scr_ext_util","path":"scripts/scr_ext_util/scr_ext_util.yy",},},
+   ],
+   "resourceType":"GMProject",
+   "resourceVersion":"2.0",
+diff --git a/objects/obj_ext_main/CleanUp_0.gml b/objects/obj_ext_main/CleanUp_0.gml
+new file mode 100644
+index 0000000..5098d31
+--- /dev/null
++++ b/objects/obj_ext_main/CleanUp_0.gml
+@@ -0,0 +1,13 @@
++/// @desc Free buffers and surfaces
++
++buffer_delete(mem_buf);
++buffer_delete(loaded_buf);
++buffer_delete(cls_buf);
++buffer_delete(istart_buf);
++buffer_delete(entry_buf);
++if (buffer_exists(d64_buf)) {
++    buffer_delete(d64_buf);
++}
++if (surface_exists(map_surf)) {
++    surface_free(map_surf);
++}
+diff --git a/objects/obj_ext_main/Create_0.gml b/objects/obj_ext_main/Create_0.gml
+new file mode 100644
+index 0000000..ea8a8a9
+--- /dev/null
++++ b/objects/obj_ext_main/Create_0.gml
+@@ -0,0 +1,85 @@
++/// @desc C64 Extractor - main controller
++
++// ---- 6502 decode table ----
++global.ext_ops = scr_ext_opcode_table();
++
++// ---- 64K C64 memory image and per-byte analysis buffers ----
++mem_buf    = buffer_create(65536, buffer_fixed, 1);   // byte values
++loaded_buf = buffer_create(65536, buffer_fixed, 1);   // 1 = byte came from a file
++cls_buf    = buffer_create(65536, buffer_fixed, 1);   // EXT_CLS_* per byte
++istart_buf = buffer_create(65536, buffer_fixed, 1);   // 1 = first byte of a decoded instruction
++entry_buf  = buffer_create(65536, buffer_fixed, 1);   // 1 = entry point
++
++// ---- File state ----
++file_path = "";
++file_name = "";
++file_kind = "";
++is_dump = false;
++segments = [];          // { start, finish, name }
++entries = [];           // { addr, strong, why }
++manual_entries = [];    // addresses traced by hand with C
++cls_counts = array_create(EXT_CLS_COUNT, 0);
++
++// ---- D64 state ----
++d64_buf = -1;
++d64_tracks = 35;
++d64_disk_name = "";
++d64_files = [];         // { name, type, typename, track, sector, blocks }
++d64_selected = -1;
++d64_scroll = 0;
++
++// ---- Layout (room is 1366 x 768) ----
++line_h = 14;
++
++map_x = 12;
++map_y = 48;
++map_scale = 2;
++map_surf = -1;
++map_dirty = true;
++map_shaded = false;
++
++hex_x = 540;
++hex_y = 48;
++hex_w = 320;
++hex_rows = 40;
++hex_top = 0;
++
++dis_x = 876;
++dis_y = 48;
++dis_w = 480;
++dis_rows = 40;
++dis_top = 0;
++dis_line_addrs = array_create(dis_rows, 0);
++
++dir_x = 12;
++dir_y = 572;
++dir_w = 512;
++dir_rows = 12;
++
++info_x = 540;
++info_y = 626;
++
++cursor_addr = 0;
++hover_addr = -1;
++status_text = "Press O to open a PRG, D64 or 64K memory dump. Hold Shift to overlay onto memory.";
++
++// ---- Toolbar ----
++buttons = [
++    { bx : 300, by : 6, bw : 96,  bh : 24, label : "Open [O]",      action : "open" },
++    { bx : 402, by : 6, bw : 150, bh : 24, label : "Trace cursor [C]", action : "trace" },
++    { bx : 558, by : 6, bw : 110, bh : 24, label : "Analyse [R]",   action : "analyse" },
++    { bx : 674, by : 6, bw : 110, bh : 24, label : "Shade map [V]", action : "shade" }
++];
++
++// ---- Colours ----
++col_bg      = make_colour_rgb(10, 10, 14);
++col_panel   = make_colour_rgb(24, 24, 32);
++col_border  = make_colour_rgb(60, 60, 80);
++col_text    = make_colour_rgb(210, 210, 220);
++col_dim     = make_colour_rgb(120, 120, 140);
++col_cursor  = make_colour_rgb(60, 60, 110);
++col_entry   = make_colour_rgb(255, 255, 255);
++col_button  = make_colour_rgb(40, 40, 58);
++col_button_hi = make_colour_rgb(64, 64, 96);
++
++scr_ext_reset_memory();
+diff --git a/objects/obj_ext_main/Draw_0.gml b/objects/obj_ext_main/Draw_0.gml
+new file mode 100644
+index 0000000..bdfc560
+--- /dev/null
++++ b/objects/obj_ext_main/Draw_0.gml
+@@ -0,0 +1,215 @@
++/// @desc Draw all panels
++
++draw_set_halign(fa_left);
++draw_set_valign(fa_top);
++
++if (map_dirty || !surface_exists(map_surf)) {
++    scr_ext_build_map();
++}
++
++// ---- Background and toolbar ----
++draw_set_colour(col_bg);
++draw_rectangle(0, 0, room_width, room_height, false);
++draw_set_colour(col_panel);
++draw_rectangle(0, 0, room_width, 36, false);
++draw_set_colour(col_text);
++draw_text(12, 11, "C64 EXTRACTOR");
++draw_set_colour(col_dim);
++draw_text(130, 11, "phase 1");
++
++for (var _i = 0; _i < array_length(buttons); _i++) {
++    var _b = buttons[_i];
++    var _over = point_in_rectangle(mouse_x, mouse_y, _b.bx, _b.by, _b.bx + _b.bw, _b.by + _b.bh);
++    if (_over) {
++        draw_set_colour(col_button_hi);
++    }
++    else {
++        draw_set_colour(col_button);
++    }
++    draw_rectangle(_b.bx, _b.by, _b.bx + _b.bw, _b.by + _b.bh, false);
++    draw_set_colour(col_border);
++    draw_rectangle(_b.bx, _b.by, _b.bx + _b.bw, _b.by + _b.bh, true);
++    draw_set_colour(col_text);
++    draw_text(_b.bx + 8, _b.by + 5, _b.label);
++}
++draw_set_colour(col_dim);
++draw_text(800, 11, "Wheel scrolls panels   Up/Down/PgUp/PgDn: disassembly   Left/Right: cursor");
++
++// ---- Memory map ----
++var _map_size = 256 * map_scale;
++draw_surface_ext(map_surf, map_x, map_y, map_scale, map_scale, 0, c_white, 1);
++draw_set_colour(col_border);
++draw_rectangle(map_x - 1, map_y - 1, map_x + _map_size, map_y + _map_size, true);
++
++// Hex view range bracket on the left edge of the map
++var _hy1 = map_y + (hex_top >> 8) * map_scale;
++var _hy2 = map_y + (((hex_top + hex_rows * 8 - 1) & $FFFF) >> 8) * map_scale + map_scale;
++draw_set_colour(col_dim);
++draw_rectangle(map_x - 6, _hy1, map_x - 3, _hy2, false);
++
++// Cursor marker
++var _cx = map_x + (cursor_addr & $FF) * map_scale;
++var _cy = map_y + (cursor_addr >> 8) * map_scale;
++draw_set_colour(c_white);
++draw_rectangle(_cx - 2, _cy - 2, _cx + map_scale + 1, _cy + map_scale + 1, true);
++
++// ---- Hex view ----
++draw_set_colour(col_panel);
++draw_rectangle(hex_x - 6, hex_y - 6, hex_x + hex_w, hex_y + hex_rows * line_h + 2, false);
++for (var _r = 0; _r < hex_rows; _r++) {
++    var _base = (hex_top + _r * 8) & $FFFF;
++    var _ly = hex_y + _r * line_h;
++    draw_set_colour(col_dim);
++    draw_text(hex_x, _ly, scr_ext_hex(_base, 4));
++    var _ascii = "";
++    for (var _j = 0; _j < 8; _j++) {
++        var _a = (_base + _j) & $FFFF;
++        var _c = buffer_peek(cls_buf, _a, buffer_u8);
++        var _bx = hex_x + 48 + _j * 24;
++        if (_a == cursor_addr) {
++            draw_set_colour(col_cursor);
++            draw_rectangle(_bx - 3, _ly, _bx + 18, _ly + line_h - 1, false);
++        }
++        if (_c == EXT_CLS_NONE) {
++            draw_set_colour(col_border);
++            draw_text(_bx, _ly, "--");
++            _ascii += " ";
++        }
++        else {
++            var _v = buffer_peek(mem_buf, _a, buffer_u8);
++            draw_set_colour(scr_ext_cls_colour(_c));
++            draw_text(_bx, _ly, scr_ext_hex(_v, 2));
++            _ascii += scr_ext_petscii_char(_v);
++        }
++    }
++    draw_set_colour(col_text);
++    draw_text(hex_x + 48 + 8 * 24 + 8, _ly, _ascii);
++}
++
++// ---- Disassembly view ----
++draw_set_colour(col_panel);
++draw_rectangle(dis_x - 6, dis_y - 6, dis_x + dis_w, dis_y + dis_rows * line_h + 2, false);
++var _da = dis_top;
++for (var _r = 0; _r < dis_rows; _r++) {
++    var _line = scr_ext_disasm_line(_da);
++    dis_line_addrs[_r] = _da;
++    var _dy = dis_y + _r * line_h;
++    if (cursor_addr >= _da && cursor_addr < _da + _line.size) {
++        draw_set_colour(col_cursor);
++        draw_rectangle(dis_x - 4, _dy, dis_x + dis_w - 2, _dy + line_h - 1, false);
++    }
++    if (_line.entry) {
++        draw_set_colour(col_entry);
++        draw_text(dis_x, _dy, ">");
++    }
++    draw_set_colour(col_dim);
++    draw_text(dis_x + 12, _dy, scr_ext_hex(_da, 4));
++    draw_text(dis_x + 56, _dy, _line.bytes);
++    if (_line.cls == EXT_CLS_NONE) {
++        draw_set_colour(col_dim);
++    }
++    else {
++        draw_set_colour(scr_ext_cls_colour(_line.cls));
++    }
++    draw_text(dis_x + 140, _dy, _line.text);
++    _da = (_da + _line.size) & $FFFF;
++}
++
++// ---- D64 directory ----
++var _dir_h = (dir_rows + 1) * line_h;
++draw_set_colour(col_panel);
++draw_rectangle(dir_x - 1, dir_y - 4, dir_x + dir_w, dir_y + _dir_h + 2, false);
++draw_set_colour(col_text);
++if (buffer_exists(d64_buf)) {
++    draw_text(dir_x + 4, dir_y, "DISK \"" + d64_disk_name + "\"   " + string(array_length(d64_files)) + " files   (click = load, Shift+click = overlay)");
++}
++else {
++    draw_set_colour(col_dim);
++    draw_text(dir_x + 4, dir_y, "No D64 open");
++}
++for (var _r = 0; _r < dir_rows; _r++) {
++    var _idx = d64_scroll + _r;
++    if (_idx >= array_length(d64_files)) {
++        break;
++    }
++    var _f = d64_files[_idx];
++    var _fy = dir_y + (_r + 1) * line_h;
++    if (_idx == d64_selected) {
++        draw_set_colour(col_cursor);
++        draw_rectangle(dir_x, _fy, dir_x + dir_w - 1, _fy + line_h - 1, false);
++    }
++    if (_f.type == 2) {
++        draw_set_colour(col_text);
++    }
++    else {
++        draw_set_colour(col_dim);
++    }
++    draw_text(dir_x + 4, _fy, string(_f.blocks));
++    draw_text(dir_x + 44, _fy, "\"" + _f.name + "\"");
++    draw_text(dir_x + 220, _fy, _f.typename);
++    draw_text(dir_x + 270, _fy, "T" + string(_f.track) + " S" + string(_f.sector));
++}
++
++// ---- Info panel ----
++draw_set_colour(col_panel);
++draw_rectangle(info_x - 6, info_y - 6, room_width - 10, room_height - 8, false);
++
++var _iy = info_y;
++draw_set_colour(col_text);
++draw_text(info_x, _iy, status_text);
++_iy += line_h;
++
++draw_set_colour(col_dim);
++if (file_name != "") {
++    draw_text(info_x, _iy, file_name + "   [" + file_kind + "]");
++}
++_iy += line_h;
++
++var _seg_text = "Loaded:";
++var _seg_n = array_length(segments);
++for (var _s = 0; _s < _seg_n && _s < 3; _s++) {
++    var _seg = segments[_s];
++    _seg_text += "  $" + scr_ext_hex(_seg.start, 4) + "-$" + scr_ext_hex(_seg.finish, 4);
++}
++if (_seg_n > 3) {
++    _seg_text += "  (+" + string(_seg_n - 3) + " more)";
++}
++draw_text(info_x, _iy, _seg_text);
++_iy += line_h;
++
++var _ent_text = "Entries:";
++var _ent_n = array_length(entries);
++for (var _e = 0; _e < _ent_n && _e < 4; _e++) {
++    var _en = entries[_e];
++    _ent_text += "  $" + scr_ext_hex(_en.addr, 4) + " (" + _en.why + ")";
++}
++if (_ent_n > 4) {
++    _ent_text += "  (+" + string(_ent_n - 4) + " more)";
++}
++if (_ent_n == 0) {
++    _ent_text += "  none found - put the cursor on code and press C";
++}
++draw_text(info_x, _iy, _ent_text);
++_iy += line_h * 2;
++
++draw_set_colour(col_text);
++draw_text(info_x, _iy, "Cursor $" + scr_ext_hex(cursor_addr, 4) + "  value $" + scr_ext_hex(buffer_peek(mem_buf, cursor_addr, buffer_u8), 2) + "  " + scr_ext_cls_name(buffer_peek(cls_buf, cursor_addr, buffer_u8)));
++_iy += line_h;
++if (hover_addr >= 0) {
++    draw_set_colour(col_dim);
++    draw_text(info_x, _iy, "Hover  $" + scr_ext_hex(hover_addr, 4) + "  value $" + scr_ext_hex(buffer_peek(mem_buf, hover_addr, buffer_u8), 2) + "  " + scr_ext_cls_name(buffer_peek(cls_buf, hover_addr, buffer_u8)));
++}
++
++// Legend with byte counts
++var _lx = 1110;
++var _ly2 = info_y;
++for (var _c2 = 0; _c2 < EXT_CLS_COUNT; _c2++) {
++    draw_set_colour(scr_ext_cls_colour(_c2));
++    draw_rectangle(_lx, _ly2 + 3, _lx + 9, _ly2 + 12, false);
++    draw_set_colour(col_dim);
++    draw_text(_lx + 16, _ly2, scr_ext_cls_name(_c2));
++    draw_text(_lx + 140, _ly2, string(cls_counts[_c2]));
++    _ly2 += line_h;
++}
++
++draw_set_colour(c_white);
+diff --git a/objects/obj_ext_main/Step_0.gml b/objects/obj_ext_main/Step_0.gml
+new file mode 100644
+index 0000000..e698752
+--- /dev/null
++++ b/objects/obj_ext_main/Step_0.gml
+@@ -0,0 +1,154 @@
++/// @desc Input
++
++var _mx = mouse_x;
++var _my = mouse_y;
++var _shift = keyboard_check(vk_shift);
++var _lmb_pressed = mouse_check_button_pressed(mb_left);
++var _wheel = 0;
++if (mouse_wheel_up()) {
++    _wheel = -1;
++}
++if (mouse_wheel_down()) {
++    _wheel = 1;
++}
++
++// ---- Toolbar ----
++if (_lmb_pressed) {
++    for (var _i = 0; _i < array_length(buttons); _i++) {
++        var _b = buttons[_i];
++        if (point_in_rectangle(_mx, _my, _b.bx, _b.by, _b.bx + _b.bw, _b.by + _b.bh)) {
++            scr_ext_do_action(_b.action, _shift);
++            _lmb_pressed = false;
++            break;
++        }
++    }
++}
++
++// ---- Hotkeys ----
++if (keyboard_check_pressed(ord("O"))) {
++    scr_ext_do_action("open", _shift);
++}
++if (keyboard_check_pressed(ord("C"))) {
++    scr_ext_do_action("trace", false);
++}
++if (keyboard_check_pressed(ord("R"))) {
++    scr_ext_do_action("analyse", false);
++}
++if (keyboard_check_pressed(ord("V"))) {
++    scr_ext_do_action("shade", false);
++}
++if (keyboard_check_pressed(vk_left)) {
++    scr_ext_set_cursor(cursor_addr - 1, false);
++}
++if (keyboard_check_pressed(vk_right)) {
++    scr_ext_set_cursor(cursor_addr + 1, false);
++}
++if (keyboard_check_pressed(vk_down)) {
++    dis_top = (dis_top + scr_ext_disasm_line(dis_top).size) & $FFFF;
++}
++if (keyboard_check_pressed(vk_up)) {
++    dis_top = scr_ext_prev_line_start(dis_top);
++}
++if (keyboard_check_pressed(vk_pagedown)) {
++    repeat (dis_rows - 1) {
++        dis_top = (dis_top + scr_ext_disasm_line(dis_top).size) & $FFFF;
++    }
++}
++if (keyboard_check_pressed(vk_pageup)) {
++    repeat (dis_rows - 1) {
++        dis_top = scr_ext_prev_line_start(dis_top);
++    }
++}
++
++hover_addr = -1;
++
++// ---- Memory map: hover, click / drag to move the cursor ----
++var _map_size = 256 * map_scale;
++if (point_in_rectangle(_mx, _my, map_x, map_y, map_x + _map_size - 1, map_y + _map_size - 1)) {
++    var _cx = floor((_mx - map_x) / map_scale);
++    var _cy = floor((_my - map_y) / map_scale);
++    hover_addr = _cy * 256 + _cx;
++    if (mouse_check_button(mb_left)) {
++        scr_ext_set_cursor(hover_addr, true);
++    }
++    if (_wheel != 0) {
++        scr_ext_set_cursor(cursor_addr + _wheel * 256, true);
++    }
++}
++
++// ---- Hex view ----
++var _hex_h = hex_rows * line_h;
++if (point_in_rectangle(_mx, _my, hex_x, hex_y, hex_x + hex_w, hex_y + _hex_h - 1)) {
++    var _row = floor((_my - hex_y) / line_h);
++    var _col = floor((_mx - (hex_x + 48)) / 24);
++    if (_col >= 0 && _col < 8) {
++        hover_addr = (hex_top + _row * 8 + _col) & $FFFF;
++        if (_lmb_pressed) {
++            scr_ext_set_cursor(hover_addr, false);
++            dis_top = scr_ext_align_to_instr(hover_addr);
++        }
++    }
++    if (_wheel != 0) {
++        var _ht = hex_top + _wheel * 24;
++        var _hmax = 65536 - hex_rows * 8;
++        if (_ht < 0) {
++            _ht = 0;
++        }
++        if (_ht > _hmax) {
++            _ht = _hmax;
++        }
++        hex_top = _ht;
++    }
++}
++
++// ---- Disassembly view ----
++var _dis_h = dis_rows * line_h;
++if (point_in_rectangle(_mx, _my, dis_x, dis_y, dis_x + dis_w, dis_y + _dis_h - 1)) {
++    var _drow = floor((_my - dis_y) / line_h);
++    if (_drow >= 0 && _drow < dis_rows) {
++        hover_addr = dis_line_addrs[_drow];
++        if (_lmb_pressed) {
++            scr_ext_set_cursor(hover_addr, false);
++            var _ht2 = (hover_addr & $FFF8) - 8 * 8;
++            if (_ht2 < 0) {
++                _ht2 = 0;
++            }
++            if (_ht2 > 65536 - hex_rows * 8) {
++                _ht2 = 65536 - hex_rows * 8;
++            }
++            hex_top = _ht2;
++        }
++    }
++    if (_wheel > 0) {
++        repeat (3) {
++            dis_top = (dis_top + scr_ext_disasm_line(dis_top).size) & $FFFF;
++        }
++    }
++    if (_wheel < 0) {
++        repeat (3) {
++            dis_top = scr_ext_prev_line_start(dis_top);
++        }
++    }
++}
++
++// ---- D64 directory ----
++var _dir_h = (dir_rows + 1) * line_h;
++if (point_in_rectangle(_mx, _my, dir_x, dir_y, dir_x + dir_w, dir_y + _dir_h)) {
++    var _n = array_length(d64_files);
++    if (_wheel != 0) {
++        d64_scroll += _wheel;
++        if (d64_scroll > _n - dir_rows) {
++            d64_scroll = _n - dir_rows;
++        }
++        if (d64_scroll < 0) {
++            d64_scroll = 0;
++        }
++    }
++    if (_lmb_pressed) {
++        var _frow = floor((_my - (dir_y + line_h)) / line_h);
++        var _idx = d64_scroll + _frow;
++        if (_frow >= 0 && _idx < _n) {
++            scr_ext_d64_load_entry(_idx, _shift);
++        }
++    }
++}
+diff --git a/objects/obj_ext_main/obj_ext_main.yy b/objects/obj_ext_main/obj_ext_main.yy
+new file mode 100644
+index 0000000..db69b8d
+--- /dev/null
++++ b/objects/obj_ext_main/obj_ext_main.yy
+@@ -0,0 +1,38 @@
++{
++  "$GMObject":"",
++  "%Name":"obj_ext_main",
++  "eventList":[
++    {"$GMEvent":"v1","%Name":"","collisionObjectId":null,"eventNum":0,"eventType":0,"isDnD":false,"name":"","resourceType":"GMEvent","resourceVersion":"2.0",},
++    {"$GMEvent":"v1","%Name":"","collisionObjectId":null,"eventNum":0,"eventType":3,"isDnD":false,"name":"","resourceType":"GMEvent","resourceVersion":"2.0",},
++    {"$GMEvent":"v1","%Name":"","collisionObjectId":null,"eventNum":0,"eventType":8,"isDnD":false,"name":"","resourceType":"GMEvent","resourceVersion":"2.0",},
++    {"$GMEvent":"v1","%Name":"","collisionObjectId":null,"eventNum":0,"eventType":12,"isDnD":false,"name":"","resourceType":"GMEvent","resourceVersion":"2.0",},
++  ],
++  "managed":true,
++  "name":"obj_ext_main",
++  "overriddenProperties":[],
++  "parent":{
++    "name":"Objects",
++    "path":"folders/Objects.yy",
++  },
++  "parentObjectId":null,
++  "persistent":false,
++  "physicsAngularDamping":0.1,
++  "physicsDensity":0.5,
++  "physicsFriction":0.2,
++  "physicsGroup":1,
++  "physicsKinematic":false,
++  "physicsLinearDamping":0.1,
++  "physicsObject":false,
++  "physicsRestitution":0.1,
++  "physicsSensor":false,
++  "physicsShape":1,
++  "physicsShapePoints":[],
++  "physicsStartAwake":true,
++  "properties":[],
++  "resourceType":"GMObject",
++  "resourceVersion":"2.0",
++  "solid":false,
++  "spriteId":null,
++  "spriteMaskId":null,
++  "visible":true,
++}
+\ No newline at end of file
+diff --git a/rooms/Room1/Room1.yy b/rooms/Room1/Room1.yy
+index 6a028c9..f1335b3 100644
+--- a/rooms/Room1/Room1.yy
++++ b/rooms/Room1/Room1.yy
+@@ -5,10 +5,14 @@
+   "inheritCode":false,
+   "inheritCreationOrder":false,
+   "inheritLayers":false,
+-  "instanceCreationOrder":[],
++  "instanceCreationOrder":[
++    {"name":"inst_5E7A0001","path":"rooms/Room1/Room1.yy",},
++  ],
+   "isDnd":false,
+   "layers":[
+-    {"$GMRInstanceLayer":"","%Name":"Instances","depth":0,"effectEnabled":true,"effectType":null,"gridX":32,"gridY":32,"hierarchyFrozen":false,"inheritLayerDepth":false,"inheritLayerSettings":false,"inheritSubLayers":true,"inheritVisibility":true,"instances":[],"layers":[],"name":"Instances","properties":[],"resourceType":"GMRInstanceLayer","resourceVersion":"2.0","userdefinedDepth":false,"visible":true,},
++    {"$GMRInstanceLayer":"","%Name":"Instances","depth":0,"effectEnabled":true,"effectType":null,"gridX":32,"gridY":32,"hierarchyFrozen":false,"inheritLayerDepth":false,"inheritLayerSettings":false,"inheritSubLayers":true,"inheritVisibility":true,"instances":[
++        {"$GMRInstance":"v4","%Name":"inst_5E7A0001","colour":4294967295,"frozen":false,"hasCreationCode":false,"ignore":false,"imageIndex":0,"imageSpeed":1.0,"inheritCode":false,"inheritedItemId":null,"inheritItemSettings":false,"isDnd":false,"name":"inst_5E7A0001","objectId":{"name":"obj_ext_main","path":"objects/obj_ext_main/obj_ext_main.yy",},"properties":[],"resourceType":"GMRInstance","resourceVersion":"2.0","rotation":0.0,"scaleX":1.0,"scaleY":1.0,"x":0.0,"y":0.0,},
++      ],"layers":[],"name":"Instances","properties":[],"resourceType":"GMRInstanceLayer","resourceVersion":"2.0","userdefinedDepth":false,"visible":true,},
+     {"$GMRBackgroundLayer":"","%Name":"Background","animationFPS":15.0,"animationSpeedType":0,"colour":4278190080,"depth":100,"effectEnabled":true,"effectType":null,"gridX":32,"gridY":32,"hierarchyFrozen":false,"hspeed":0.0,"htiled":false,"inheritLayerDepth":false,"inheritLayerSettings":false,"inheritSubLayers":true,"inheritVisibility":true,"layers":[],"name":"Background","properties":[],"resourceType":"GMRBackgroundLayer","resourceVersion":"2.0","spriteId":null,"stretch":false,"userdefinedAnimFPS":false,"userdefinedDepth":false,"visible":true,"vspeed":0.0,"vtiled":false,"x":0,"y":0,},
+   ],
+   "name":"Room1",
+diff --git a/scripts/scr_ext_analyse/scr_ext_analyse.gml b/scripts/scr_ext_analyse/scr_ext_analyse.gml
+new file mode 100644
+index 0000000..0390a40
+--- /dev/null
++++ b/scripts/scr_ext_analyse/scr_ext_analyse.gml
+@@ -0,0 +1,393 @@
++/// @desc scr_ext_analyse()
++/// Full static analysis pass over the 64K image:
++///   1. find entry points (BASIC SYS, load address, vectors, manual)
++///   2. recursive-descent trace from each entry  -> green / yellow
++///   3. heuristic scoring of everything untraced  -> yellow / orange / red
++function scr_ext_analyse() {
++    // loaded_buf holds 1 for loaded bytes, which equals EXT_CLS_UNKNOWN
++    buffer_copy(loaded_buf, 0, 65536, cls_buf, 0);
++    buffer_fill(istart_buf, 0, buffer_u8, 0, 65536);
++    buffer_fill(entry_buf,  0, buffer_u8, 0, 65536);
++
++    entries = scr_ext_find_entries();
++    for (var _i = 0; _i < array_length(manual_entries); _i++) {
++        array_push(entries, { addr : manual_entries[_i], strong : true, why : "manual" });
++    }
++
++    // Strong entries first, then weak ones
++    for (var _i = 0; _i < array_length(entries); _i++) {
++        var _e = entries[_i];
++        buffer_poke(entry_buf, _e.addr, buffer_u8, 1);
++        if (_e.strong) {
++            scr_ext_trace(_e.addr, EXT_CLS_SURE);
++        }
++    }
++    for (var _i = 0; _i < array_length(entries); _i++) {
++        var _e = entries[_i];
++        if (!_e.strong) {
++            scr_ext_trace(_e.addr, EXT_CLS_LIKELY);
++        }
++    }
++
++    scr_ext_score_unknown();
++    scr_ext_count_classes();
++    map_dirty = true;
++}
++
++/// @desc scr_ext_find_entries()
++/// Returns an array of { addr, strong, why }.
++function scr_ext_find_entries() {
++    var _list = [];
++
++    if (is_dump) {
++        // Interrupt / reset vectors, skipping the stock KERNAL handlers
++        var _vec_addr = [$0314, $0318, $FFFA, $FFFC, $FFFE];
++        var _vec_name = ["IRQ $0314", "NMI $0318", "NMI $FFFA", "RESET $FFFC", "IRQ $FFFE"];
++        var _rom_default = [$EA31, $EA81, $EA7E, $FE47, $FE43, $FE66, $FCE2, $FF48];
++        for (var _i = 0; _i < array_length(_vec_addr); _i++) {
++            var _a = scr_ext_peek16(_vec_addr[_i]);
++            var _skip = false;
++            for (var _k = 0; _k < array_length(_rom_default); _k++) {
++                if (_a == _rom_default[_k]) {
++                    _skip = true;
++                }
++            }
++            if (!_skip) {
++                array_push(_list, { addr : _a, strong : false, why : _vec_name[_i] });
++            }
++        }
++        return _list;
++    }
++
++    for (var _s = 0; _s < array_length(segments); _s++) {
++        var _seg = segments[_s];
++        if (_seg.start == $0801) {
++            var _found = scr_ext_find_basic_sys();
++            for (var _k = 0; _k < array_length(_found); _k++) {
++                array_push(_list, { addr : _found[_k], strong : true, why : "BASIC SYS" });
++            }
++        }
++        else {
++            array_push(_list, { addr : _seg.start, strong : false, why : "load address" });
++        }
++    }
++    return _list;
++}
++
++/// @desc scr_ext_find_basic_sys()
++/// Walks the BASIC program at $0801 and returns every SYS target found.
++function scr_ext_find_basic_sys() {
++    var _out = [];
++    var _p = $0801;
++    var _lines = 0;
++    while (_lines < 10) {
++        if (!scr_ext_is_loaded(_p)) {
++            break;
++        }
++        var _link = scr_ext_peek16(_p);
++        if (_link == 0) {
++            break;
++        }
++        var _q = _p + 4;
++        var _end = _p + 84;
++        while (_q < _end) {
++            var _b = scr_ext_peek8(_q);
++            if (_b == 0) {
++                break;
++            }
++            if (_b == $9E) {
++                var _r = _q + 1;
++                var _rb = scr_ext_peek8(_r);
++                while (_rb == $20 || _rb == $28) {
++                    _r++;
++                    _rb = scr_ext_peek8(_r);
++                }
++                var _val = 0;
++                var _digits = 0;
++                while (_rb >= $30 && _rb <= $39 && _digits < 5) {
++                    _val = _val * 10 + (_rb - $30);
++                    _digits++;
++                    _r++;
++                    _rb = scr_ext_peek8(_r);
++                }
++                if (_digits > 0 && _val < 65536) {
++                    array_push(_out, _val);
++                }
++            }
++            _q++;
++        }
++        if (_link <= _p) {
++            break;
++        }
++        _p = _link;
++        _lines++;
++    }
++    return _out;
++}
++
++/// @desc scr_ext_op_target(addr, op)
++/// Operand value: branch destination, absolute address or zero-page/immediate byte.
++function scr_ext_op_target(_a, _op) {
++    switch (_op.mode) {
++        case EXT_MODE_REL:
++            var _d = scr_ext_peek8(_a + 1);
++            if (_d > 127) {
++                _d -= 256;
++            }
++            return (_a + 2 + _d) & $FFFF;
++        case EXT_MODE_ABS:
++        case EXT_MODE_ABX:
++        case EXT_MODE_ABY:
++        case EXT_MODE_IND:
++            return scr_ext_peek16(_a + 1);
++        case EXT_MODE_IMM:
++        case EXT_MODE_ZP:
++        case EXT_MODE_ZPX:
++        case EXT_MODE_ZPY:
++        case EXT_MODE_IZX:
++        case EXT_MODE_IZY:
++            return scr_ext_peek8(_a + 1);
++    }
++    return -1;
++}
++
++/// @desc scr_ext_trace(start, level)
++/// Recursive-descent disassembly. Marks instruction bytes with 'level'
++/// (EXT_CLS_SURE or EXT_CLS_LIKELY) and follows branches, JSR and JMP.
++function scr_ext_trace(_start, _level) {
++    var _ops = global.ext_ops;
++    var _stack = [_start & $FFFF];
++    var _guard = 0;
++    var _max = 200000;
++
++    while (array_length(_stack) > 0 && _guard < _max) {
++        var _a = array_pop(_stack);
++        var _walking = true;
++        while (_walking) {
++            _guard++;
++            if (_guard >= _max) {
++                break;
++            }
++            if (buffer_peek(loaded_buf, _a, buffer_u8) == 0) {
++                break;
++            }
++            var _cls_here = buffer_peek(cls_buf, _a, buffer_u8);
++            if (buffer_peek(istart_buf, _a, buffer_u8) == 1) {
++                // Already traced at this level or better
++                if (_cls_here == EXT_CLS_SURE || _cls_here == _level) {
++                    break;
++                }
++            }
++            else {
++                // Landing in the middle of an existing instruction
++                if (_cls_here == EXT_CLS_SURE || _cls_here == EXT_CLS_LIKELY) {
++                    break;
++                }
++            }
++
++            var _op = _ops[buffer_peek(mem_buf, _a, buffer_u8)];
++            if (_op.flow == EXT_FLOW_JAM || _op.unstable) {
++                break;
++            }
++
++            var _ok = true;
++            for (var _k = 0; _k < _op.size; _k++) {
++                var _b = (_a + _k) & $FFFF;
++                if (buffer_peek(loaded_buf, _b, buffer_u8) == 0) {
++                    _ok = false;
++                }
++                if (_k > 0) {
++                    if (buffer_peek(istart_buf, _b, buffer_u8) == 1) {
++                        _ok = false;
++                    }
++                }
++            }
++            if (!_ok) {
++                break;
++            }
++
++            buffer_poke(istart_buf, _a, buffer_u8, 1);
++            for (var _k = 0; _k < _op.size; _k++) {
++                var _b = (_a + _k) & $FFFF;
++                if (buffer_peek(cls_buf, _b, buffer_u8) != EXT_CLS_SURE) {
++                    buffer_poke(cls_buf, _b, buffer_u8, _level);
++                }
++            }
++
++            switch (_op.flow) {
++                case EXT_FLOW_BRANCH:
++                case EXT_FLOW_JSR:
++                    array_push(_stack, scr_ext_op_target(_a, _op));
++                    break;
++                case EXT_FLOW_JMP:
++                    array_push(_stack, scr_ext_op_target(_a, _op));
++                    _walking = false;
++                    break;
++                case EXT_FLOW_STOP:
++                    _walking = false;
++                    break;
++            }
++            _a = (_a + _op.size) & $FFFF;
++        }
++    }
++}
++
++/// @desc scr_ext_seq_score(addr)
++/// Scores a linear run of instructions starting at addr.
++/// High = looks like code, low/negative = looks like data.
++function scr_ext_seq_score(_p) {
++    var _ops = global.ext_ops;
++    var _score = 0;
++    var _a = _p;
++    var _prev = -1;
++    var _same = 0;
++
++    for (var _i = 0; _i < EXT_SEQ_LENGTH; _i++) {
++        if (buffer_peek(loaded_buf, _a, buffer_u8) == 0) {
++            _score -= 4;
++            break;
++        }
++        var _byte = buffer_peek(mem_buf, _a, buffer_u8);
++        var _op = _ops[_byte];
++
++        if (_op.flow == EXT_FLOW_JAM) {
++            _score -= 12;
++            break;
++        }
++        if (_op.unstable) {
++            _score -= 8;
++            break;
++        }
++        if (_byte == $00) {
++            _score -= 5;
++            break;
++        }
++
++        var _bad = false;
++        for (var _k = 1; _k < _op.size; _k++) {
++            if (buffer_peek(loaded_buf, (_a + _k) & $FFFF, buffer_u8) == 0) {
++                _bad = true;
++            }
++        }
++        if (_bad) {
++            _score -= 4;
++            break;
++        }
++
++        if (_op.illegal) {
++            if (_op.mn == "NOP") {
++                _score -= 3;
++            }
++            else {
++                _score -= 2;
++            }
++        }
++        else {
++            _score += 2;
++        }
++
++        // Runs of the same opcode are typical of data
++        if (_byte == _prev) {
++            _same++;
++            if (_same >= 2) {
++                _score -= 6;
++                break;
++            }
++        }
++        else {
++            _same = 0;
++        }
++        _prev = _byte;
++
++        // Absolute operands: where do they point?
++        if (_op.size == 3) {
++            var _t = scr_ext_peek16(_a + 1);
++            if (_t < $0100) {
++                _score -= 2;        // assemblers use zero-page modes for these
++            }
++            else if (_t >= $D000 && _t < $E000) {
++                _score += 2;        // VIC / SID / CIA / colour RAM
++            }
++            else if (_t >= $FF81 && _t <= $FFF3) {
++                _score += 2;        // KERNAL jump table
++            }
++            else if (buffer_peek(loaded_buf, _t, buffer_u8) == 1) {
++                _score += 1;
++            }
++            else if (_t < $0400) {
++                _score += 1;        // stack, vectors, system area
++            }
++            else {
++                _score -= 1;
++            }
++        }
++
++        if (_op.mode == EXT_MODE_REL) {
++            var _bt = scr_ext_op_target(_a, _op);
++            if (buffer_peek(loaded_buf, _bt, buffer_u8) == 1) {
++                _score += 1;
++            }
++            else {
++                _score -= 3;
++            }
++        }
++
++        if (_op.flow == EXT_FLOW_STOP || _op.flow == EXT_FLOW_JMP) {
++            _score += 3;
++            break;
++        }
++        _a = (_a + _op.size) & $FFFF;
++    }
++    return _score;
++}
++
++/// @desc scr_ext_score_unknown()
++/// Linear sweep over every untraced loaded byte, classifying it by sequence score.
++function scr_ext_score_unknown() {
++    var _ops = global.ext_ops;
++    var _p = 0;
++    while (_p < 65536) {
++        if (buffer_peek(cls_buf, _p, buffer_u8) != EXT_CLS_UNKNOWN) {
++            _p++;
++            continue;
++        }
++        var _s = scr_ext_seq_score(_p);
++        var _size = _ops[buffer_peek(mem_buf, _p, buffer_u8)].size;
++
++        var _level = EXT_CLS_NOT;
++        if (_s >= EXT_LIKELY_SCORE) {
++            _level = EXT_CLS_LIKELY;
++        }
++        else if (_s >= EXT_DOUBT_SCORE) {
++            _level = EXT_CLS_DOUBT;
++        }
++
++        if (_level != EXT_CLS_NOT && _p + _size <= 65536) {
++            var _free = true;
++            for (var _k = 0; _k < _size; _k++) {
++                if (buffer_peek(cls_buf, _p + _k, buffer_u8) != EXT_CLS_UNKNOWN) {
++                    _free = false;
++                }
++            }
++            if (_free) {
++                buffer_poke(istart_buf, _p, buffer_u8, 1);
++                for (var _k = 0; _k < _size; _k++) {
++                    buffer_poke(cls_buf, _p + _k, buffer_u8, _level);
++                }
++                _p += _size;
++                continue;
++            }
++        }
++        buffer_poke(cls_buf, _p, buffer_u8, EXT_CLS_NOT);
++        _p++;
++    }
++}
++
++/// @desc scr_ext_count_classes()
++function scr_ext_count_classes() {
++    cls_counts = array_create(EXT_CLS_COUNT, 0);
++    for (var _i = 0; _i < 65536; _i++) {
++        var _c = buffer_peek(cls_buf, _i, buffer_u8);
++        cls_counts[_c] += 1;
++    }
++}
+diff --git a/scripts/scr_ext_analyse/scr_ext_analyse.yy b/scripts/scr_ext_analyse/scr_ext_analyse.yy
+new file mode 100644
+index 0000000..ad575cf
+--- /dev/null
++++ b/scripts/scr_ext_analyse/scr_ext_analyse.yy
+@@ -0,0 +1,13 @@
++{
++  "$GMScript":"v1",
++  "%Name":"scr_ext_analyse",
++  "isCompatibility":false,
++  "isDnD":false,
++  "name":"scr_ext_analyse",
++  "parent":{
++    "name":"Scripts",
++    "path":"folders/Scripts.yy",
++  },
++  "resourceType":"GMScript",
++  "resourceVersion":"2.0",
++}
+\ No newline at end of file
+diff --git a/scripts/scr_ext_d64/scr_ext_d64.gml b/scripts/scr_ext_d64/scr_ext_d64.gml
+new file mode 100644
+index 0000000..152737e
+--- /dev/null
++++ b/scripts/scr_ext_d64/scr_ext_d64.gml
+@@ -0,0 +1,173 @@
++/// @desc scr_ext_d64_spt(track) - sectors per track on a 1541 disk.
++function scr_ext_d64_spt(_track) {
++    if (_track <= 17) {
++        return 21;
++    }
++    if (_track <= 24) {
++        return 19;
++    }
++    if (_track <= 30) {
++        return 18;
++    }
++    return 17;
++}
++
++/// @desc scr_ext_d64_offset(track, sector)
++/// Byte offset of a sector in the D64 image, or -1 if the T/S is invalid.
++function scr_ext_d64_offset(_track, _sector) {
++    if (_track < 1 || _track > d64_tracks) {
++        return -1;
++    }
++    if (_sector < 0 || _sector >= scr_ext_d64_spt(_track)) {
++        return -1;
++    }
++    var _o = 0;
++    for (var _t = 1; _t < _track; _t++) {
++        _o += scr_ext_d64_spt(_t);
++    }
++    return (_o + _sector) * 256;
++}
++
++/// @desc scr_ext_d64_name(offset, max_len)
++/// Reads a $A0-padded PETSCII name from the image.
++function scr_ext_d64_name(_offset, _max) {
++    var _s = "";
++    for (var _i = 0; _i < _max; _i++) {
++        var _b = buffer_peek(d64_buf, _offset + _i, buffer_u8);
++        if (_b == $A0) {
++            break;
++        }
++        _s += scr_ext_petscii_char(_b);
++    }
++    return _s;
++}
++
++/// @desc scr_ext_d64_open(image_size)
++/// Validates the image size and reads the directory into d64_files.
++function scr_ext_d64_open(_size) {
++    d64_files = [];
++    d64_disk_name = "";
++    d64_selected = -1;
++    d64_scroll = 0;
++
++    if (_size == 174848 || _size == 175531) {
++        d64_tracks = 35;
++    }
++    else if (_size == 196608 || _size == 197376) {
++        d64_tracks = 40;
++    }
++    else {
++        status_text = "Not a recognised D64 size (" + string(_size) + " bytes).";
++        return false;
++    }
++
++    var _bam = scr_ext_d64_offset(18, 0);
++    d64_disk_name = scr_ext_d64_name(_bam + $90, 16);
++
++    var _type_names = ["DEL", "SEQ", "PRG", "USR", "REL", "???", "???", "???"];
++    var _t = 18;
++    var _s = 1;
++    var _guard = 0;
++    while (_t != 0 && _guard < 40) {
++        var _o = scr_ext_d64_offset(_t, _s);
++        if (_o < 0) {
++            break;
++        }
++        for (var _i = 0; _i < 8; _i++) {
++            var _e = _o + _i * 32;
++            var _type = buffer_peek(d64_buf, _e + 2, buffer_u8);
++            if (_type == 0) {
++                continue;
++            }
++            var _blocks = buffer_peek(d64_buf, _e + 30, buffer_u8) + (buffer_peek(d64_buf, _e + 31, buffer_u8) << 8);
++            array_push(d64_files, {
++                name     : scr_ext_d64_name(_e + 5, 16),
++                type     : _type & 7,
++                typename : _type_names[_type & 7],
++                track    : buffer_peek(d64_buf, _e + 3, buffer_u8),
++                sector   : buffer_peek(d64_buf, _e + 4, buffer_u8),
++                blocks   : _blocks
++            });
++        }
++        _t = buffer_peek(d64_buf, _o, buffer_u8);
++        _s = buffer_peek(d64_buf, _o + 1, buffer_u8);
++        _guard++;
++    }
++
++    file_kind = "D64 (" + string(d64_tracks) + " tracks)";
++    status_text = "D64 \"" + d64_disk_name + "\": " + string(array_length(d64_files)) + " files.";
++    return true;
++}
++
++/// @desc scr_ext_d64_extract(track, sector)
++/// Follows a file's T/S chain. Returns { buf, len } - caller deletes buf.
++function scr_ext_d64_extract(_track, _sector) {
++    var _out = buffer_create(4096, buffer_fixed, 1);
++    var _len = 0;
++    var _t = _track;
++    var _s = _sector;
++    var _guard = 0;
++    while (_guard < 800) {
++        var _o = scr_ext_d64_offset(_t, _s);
++        if (_o < 0) {
++            break;
++        }
++        var _nt = buffer_peek(d64_buf, _o, buffer_u8);
++        var _ns = buffer_peek(d64_buf, _o + 1, buffer_u8);
++        var _n = 254;
++        if (_nt == 0) {
++            // Last sector: _ns is the index of the last used byte
++            _n = _ns - 1;
++            if (_n < 0) {
++                _n = 0;
++            }
++        }
++        if (_n > 0) {
++            if (_len + _n > buffer_get_size(_out)) {
++                buffer_resize(_out, (_len + _n) * 2);
++            }
++            buffer_copy(d64_buf, _o + 2, _n, _out, _len);
++            _len += _n;
++        }
++        if (_nt == 0) {
++            break;
++        }
++        _t = _nt;
++        _s = _ns;
++        _guard++;
++    }
++    return { buf : _out, len : _len };
++}
++
++/// @desc scr_ext_d64_load_entry(index, overlay)
++/// Extracts a directory entry and loads it into C64 memory as a PRG.
++function scr_ext_d64_load_entry(_index, _overlay) {
++    if (!buffer_exists(d64_buf)) {
++        return false;
++    }
++    if (_index < 0 || _index >= array_length(d64_files)) {
++        return false;
++    }
++    var _f = d64_files[_index];
++    var _res = scr_ext_d64_extract(_f.track, _f.sector);
++
++    if (!_overlay) {
++        scr_ext_reset_memory();
++        manual_entries = [];
++    }
++    var _ok = scr_ext_load_prg_bytes(_res.buf, 0, _res.len, _f.name);
++    buffer_delete(_res.buf);
++
++    d64_selected = _index;
++    if (_ok) {
++        scr_ext_analyse();
++        var _n = array_length(segments);
++        if (_overlay) {
++            scr_ext_set_cursor(segments[_n - 1].start, true);
++        }
++        else {
++            scr_ext_jump_to_start();
++        }
++    }
++    return _ok;
++}
+diff --git a/scripts/scr_ext_d64/scr_ext_d64.yy b/scripts/scr_ext_d64/scr_ext_d64.yy
+new file mode 100644
+index 0000000..66fcba6
+--- /dev/null
++++ b/scripts/scr_ext_d64/scr_ext_d64.yy
+@@ -0,0 +1,13 @@
++{
++  "$GMScript":"v1",
++  "%Name":"scr_ext_d64",
++  "isCompatibility":false,
++  "isDnD":false,
++  "name":"scr_ext_d64",
++  "parent":{
++    "name":"Scripts",
++    "path":"folders/Scripts.yy",
++  },
++  "resourceType":"GMScript",
++  "resourceVersion":"2.0",
++}
+\ No newline at end of file
+diff --git a/scripts/scr_ext_disasm/scr_ext_disasm.gml b/scripts/scr_ext_disasm/scr_ext_disasm.gml
+new file mode 100644
+index 0000000..0cda5ec
+--- /dev/null
++++ b/scripts/scr_ext_disasm/scr_ext_disasm.gml
+@@ -0,0 +1,169 @@
++/// @desc scr_ext_format_operand(addr, op)
++function scr_ext_format_operand(_a, _op) {
++    switch (_op.mode) {
++        case EXT_MODE_IMP: return "";
++        case EXT_MODE_ACC: return "A";
++        case EXT_MODE_IMM: return "#$" + scr_ext_hex(scr_ext_peek8(_a + 1), 2);
++        case EXT_MODE_ZP:  return "$" + scr_ext_hex(scr_ext_peek8(_a + 1), 2);
++        case EXT_MODE_ZPX: return "$" + scr_ext_hex(scr_ext_peek8(_a + 1), 2) + ",X";
++        case EXT_MODE_ZPY: return "$" + scr_ext_hex(scr_ext_peek8(_a + 1), 2) + ",Y";
++        case EXT_MODE_ABS: return "$" + scr_ext_hex(scr_ext_peek16(_a + 1), 4);
++        case EXT_MODE_ABX: return "$" + scr_ext_hex(scr_ext_peek16(_a + 1), 4) + ",X";
++        case EXT_MODE_ABY: return "$" + scr_ext_hex(scr_ext_peek16(_a + 1), 4) + ",Y";
++        case EXT_MODE_IND: return "($" + scr_ext_hex(scr_ext_peek16(_a + 1), 4) + ")";
++        case EXT_MODE_IZX: return "($" + scr_ext_hex(scr_ext_peek8(_a + 1), 2) + ",X)";
++        case EXT_MODE_IZY: return "($" + scr_ext_hex(scr_ext_peek8(_a + 1), 2) + "),Y";
++        case EXT_MODE_REL: return "$" + scr_ext_hex(scr_ext_op_target(_a, _op), 4);
++    }
++    return "";
++}
++
++/// @desc scr_ext_disasm_line(addr)
++/// One line of the disassembly view: an instruction where the analyser found one,
++/// otherwise up to 4 data bytes of the same class, or a collapsed not-loaded run.
++/// Returns { addr, size, bytes, text, cls, entry }.
++function scr_ext_disasm_line(_a) {
++    var _addr = _a & $FFFF;
++    var _cls = buffer_peek(cls_buf, _addr, buffer_u8);
++    var _line = {
++        addr  : _addr,
++        size  : 1,
++        bytes : "",
++        text  : "",
++        cls   : _cls,
++        entry : buffer_peek(entry_buf, _addr, buffer_u8) == 1
++    };
++
++    if (_cls == EXT_CLS_NONE) {
++        var _n = 0;
++        var _b = _addr;
++        while (_n < 256) {
++            if (buffer_peek(loaded_buf, _b, buffer_u8) == 1) {
++                break;
++            }
++            _n++;
++            _b = (_b + 1) & $FFFF;
++            if (_b == 0) {
++                break;
++            }
++        }
++        if (_n < 1) {
++            _n = 1;
++        }
++        _line.size = _n;
++        _line.text = "-- not loaded (" + string(_n) + " bytes)";
++        return _line;
++    }
++
++    if (buffer_peek(istart_buf, _addr, buffer_u8) == 1) {
++        var _op = global.ext_ops[buffer_peek(mem_buf, _addr, buffer_u8)];
++        _line.size = _op.size;
++        var _bytes = "";
++        for (var _k = 0; _k < _op.size; _k++) {
++            _bytes += scr_ext_hex(scr_ext_peek8(_addr + _k), 2) + " ";
++        }
++        _line.bytes = _bytes;
++        var _text = _op.mn;
++        var _operand = scr_ext_format_operand(_addr, _op);
++        if (_operand != "") {
++            _text += " " + _operand;
++        }
++        if (_op.illegal) {
++            _text += "   ; illegal";
++        }
++        _line.text = _text;
++        return _line;
++    }
++
++    // Data bytes
++    var _count = 0;
++    var _text_d = ".byte ";
++    var _bytes_d = "";
++    while (_count < 4) {
++        var _bd = (_addr + _count) & $FFFF;
++        if (_count > 0) {
++            if (buffer_peek(cls_buf, _bd, buffer_u8) != _cls) {
++                break;
++            }
++            if (buffer_peek(istart_buf, _bd, buffer_u8) == 1) {
++                break;
++            }
++            if (buffer_peek(entry_buf, _bd, buffer_u8) == 1) {
++                break;
++            }
++            _text_d += ",";
++        }
++        var _v = buffer_peek(mem_buf, _bd, buffer_u8);
++        _text_d += "$" + scr_ext_hex(_v, 2);
++        _bytes_d += scr_ext_hex(_v, 2) + " ";
++        _count++;
++    }
++    _line.size = _count;
++    _line.bytes = _bytes_d;
++    _line.text = _text_d;
++    return _line;
++}
++
++/// @desc scr_ext_align_to_instr(addr)
++/// If addr sits inside a decoded instruction, returns that instruction's start.
++function scr_ext_align_to_instr(_a) {
++    var _addr = _a & $FFFF;
++    if (buffer_peek(istart_buf, _addr, buffer_u8) == 1) {
++        return _addr;
++    }
++    for (var _k = 1; _k <= 2; _k++) {
++        var _b = (_addr - _k) & $FFFF;
++        if (buffer_peek(istart_buf, _b, buffer_u8) == 1) {
++            if (global.ext_ops[buffer_peek(mem_buf, _b, buffer_u8)].size > _k) {
++                return _b;
++            }
++        }
++    }
++    return _addr;
++}
++
++/// @desc scr_ext_prev_line_start(addr)
++/// Best guess at the start of the disassembly line before addr (for scrolling up).
++function scr_ext_prev_line_start(_a) {
++    var _addr = _a & $FFFF;
++    var _prev = (_addr - 1) & $FFFF;
++
++    // Not-loaded run: jump back over it (up to a page)
++    if (buffer_peek(loaded_buf, _prev, buffer_u8) == 0) {
++        var _n = 1;
++        var _b = _prev;
++        while (_n < 256) {
++            var _c = (_b - 1) & $FFFF;
++            if (buffer_peek(loaded_buf, _c, buffer_u8) == 1) {
++                break;
++            }
++            _b = _c;
++            _n++;
++        }
++        return _b;
++    }
++
++    // An instruction that ends exactly at addr
++    for (var _k = 1; _k <= 3; _k++) {
++        var _s = (_addr - _k) & $FFFF;
++        if (buffer_peek(istart_buf, _s, buffer_u8) == 1) {
++            if (global.ext_ops[buffer_peek(mem_buf, _s, buffer_u8)].size == _k) {
++                return _s;
++            }
++        }
++    }
++
++    // Data: step back up to 4 bytes, stopping at code or not-loaded memory
++    var _step = 1;
++    while (_step < 4) {
++        var _d = (_addr - _step - 1) & $FFFF;
++        if (buffer_peek(loaded_buf, _d, buffer_u8) == 0) {
++            break;
++        }
++        if (buffer_peek(istart_buf, _d, buffer_u8) == 1) {
++            break;
++        }
++        _step++;
++    }
++    return (_addr - _step) & $FFFF;
++}
+diff --git a/scripts/scr_ext_disasm/scr_ext_disasm.yy b/scripts/scr_ext_disasm/scr_ext_disasm.yy
+new file mode 100644
+index 0000000..9b6e3c8
+--- /dev/null
++++ b/scripts/scr_ext_disasm/scr_ext_disasm.yy
+@@ -0,0 +1,13 @@
++{
++  "$GMScript":"v1",
++  "%Name":"scr_ext_disasm",
++  "isCompatibility":false,
++  "isDnD":false,
++  "name":"scr_ext_disasm",
++  "parent":{
++    "name":"Scripts",
++    "path":"folders/Scripts.yy",
++  },
++  "resourceType":"GMScript",
++  "resourceVersion":"2.0",
++}
+\ No newline at end of file
+diff --git a/scripts/scr_ext_loader/scr_ext_loader.gml b/scripts/scr_ext_loader/scr_ext_loader.gml
+new file mode 100644
+index 0000000..5a10ca8
+--- /dev/null
++++ b/scripts/scr_ext_loader/scr_ext_loader.gml
+@@ -0,0 +1,142 @@
++/// @desc scr_ext_reset_memory()
++/// Clears the 64K image and everything derived from it.
++function scr_ext_reset_memory() {
++    buffer_fill(mem_buf,    0, buffer_u8, 0, 65536);
++    buffer_fill(loaded_buf, 0, buffer_u8, 0, 65536);
++    buffer_fill(cls_buf,    0, buffer_u8, 0, 65536);
++    buffer_fill(istart_buf, 0, buffer_u8, 0, 65536);
++    buffer_fill(entry_buf,  0, buffer_u8, 0, 65536);
++    segments = [];
++    entries = [];
++    is_dump = false;
++    cls_counts = array_create(EXT_CLS_COUNT, 0);
++    map_dirty = true;
++}
++
++/// @desc scr_ext_load_path(path, overlay)
++/// Loads a PRG, a D64 or a raw 64K memory dump.
++/// overlay = true keeps what is already in memory (multi-load games).
++function scr_ext_load_path(_path, _overlay) {
++    if (!file_exists(_path)) {
++        status_text = "File not found: " + _path;
++        return false;
++    }
++
++    var _ext = string_lower(filename_ext(_path));
++    if (_ext == ".crt" || _ext == ".tap" || _ext == ".t64") {
++        status_text = string_upper(_ext) + " files aren't supported yet (later phase).";
++        return false;
++    }
++
++    var _buf = buffer_load(_path);
++    if (!buffer_exists(_buf)) {
++        status_text = "Couldn't read " + _path;
++        return false;
++    }
++    var _size = buffer_get_size(_buf);
++
++    file_path = _path;
++    file_name = filename_name(_path);
++
++    // ---- D64: keep the image, list the directory, auto-load the first PRG ----
++    if (_ext == ".d64") {
++        if (buffer_exists(d64_buf)) {
++            buffer_delete(d64_buf);
++        }
++        d64_buf = _buf;
++        if (!scr_ext_d64_open(_size)) {
++            buffer_delete(d64_buf);
++            d64_buf = -1;
++            return false;
++        }
++        var _first = -1;
++        for (var _i = 0; _i < array_length(d64_files); _i++) {
++            if (d64_files[_i].type == 2) {
++                _first = _i;
++                break;
++            }
++        }
++        if (_first >= 0) {
++            scr_ext_d64_load_entry(_first, _overlay);
++        }
++        else {
++            if (!_overlay) {
++                scr_ext_reset_memory();
++                manual_entries = [];
++            }
++            status_text = "D64 opened, no PRG files found.";
++        }
++        return true;
++    }
++
++    // ---- Anything else replaces the D64 listing ----
++    if (buffer_exists(d64_buf)) {
++        buffer_delete(d64_buf);
++    }
++    d64_buf = -1;
++    d64_files = [];
++    d64_disk_name = "";
++    d64_selected = -1;
++    d64_scroll = 0;
++
++    if (!_overlay) {
++        scr_ext_reset_memory();
++        manual_entries = [];
++    }
++
++    var _ok = false;
++    if (_size == 65536) {
++        // Raw memory dump, e.g. VICE monitor:  save "dump.bin" 0 0000 ffff
++        buffer_copy(_buf, 0, 65536, mem_buf, 0);
++        buffer_fill(loaded_buf, 0, buffer_u8, 1, 65536);
++        is_dump = true;
++        array_push(segments, { start : 0, finish : $FFFF, name : file_name });
++        file_kind = "64K memory dump";
++        _ok = true;
++    }
++    else {
++        _ok = scr_ext_load_prg_bytes(_buf, 0, _size, file_name);
++        file_kind = "PRG";
++    }
++    buffer_delete(_buf);
++
++    if (_ok) {
++        scr_ext_analyse();
++        scr_ext_jump_to_start();
++    }
++    return _ok;
++}
++
++/// @desc scr_ext_load_prg_bytes(src_buffer, offset, length, name)
++/// Copies PRG data (2-byte load address + payload) into C64 memory.
++function scr_ext_load_prg_bytes(_src, _offset, _len, _name) {
++    if (_len < 3) {
++        status_text = _name + " is too short to be a PRG.";
++        return false;
++    }
++    var _lo = buffer_peek(_src, _offset, buffer_u8);
++    var _hi = buffer_peek(_src, _offset + 1, buffer_u8);
++    var _load = _lo + (_hi << 8);
++    var _count = _len - 2;
++    if (_load + _count > 65536) {
++        _count = 65536 - _load;
++    }
++    buffer_copy(_src, _offset + 2, _count, mem_buf, _load);
++    buffer_fill(loaded_buf, _load, buffer_u8, 1, _count);
++    array_push(segments, { start : _load, finish : _load + _count - 1, name : _name });
++    status_text = "Loaded " + _name + " at $" + scr_ext_hex(_load, 4) + "-$" + scr_ext_hex(_load + _count - 1, 4);
++    return true;
++}
++
++/// @desc scr_ext_jump_to_start()
++/// Moves the cursor to the first entry point, or the start of the last loaded segment.
++function scr_ext_jump_to_start() {
++    if (array_length(entries) > 0) {
++        scr_ext_set_cursor(entries[0].addr, true);
++        return;
++    }
++    var _n = array_length(segments);
++    if (_n > 0) {
++        scr_ext_set_cursor(segments[_n - 1].start, true);
++    }
++}
+diff --git a/scripts/scr_ext_loader/scr_ext_loader.yy b/scripts/scr_ext_loader/scr_ext_loader.yy
+new file mode 100644
+index 0000000..2d18ba7
+--- /dev/null
++++ b/scripts/scr_ext_loader/scr_ext_loader.yy
+@@ -0,0 +1,13 @@
++{
++  "$GMScript":"v1",
++  "%Name":"scr_ext_loader",
++  "isCompatibility":false,
++  "isDnD":false,
++  "name":"scr_ext_loader",
++  "parent":{
++    "name":"Scripts",
++    "path":"folders/Scripts.yy",
++  },
++  "resourceType":"GMScript",
++  "resourceVersion":"2.0",
++}
+\ No newline at end of file
+diff --git a/scripts/scr_ext_macros/scr_ext_macros.gml b/scripts/scr_ext_macros/scr_ext_macros.gml
+new file mode 100644
+index 0000000..eaeaad6
+--- /dev/null
++++ b/scripts/scr_ext_macros/scr_ext_macros.gml
+@@ -0,0 +1,57 @@
++// ============================================================================
++// C64 Extractor - shared constants
++// ============================================================================
++
++// Memory classification, one value per byte in cls_buf.
++// NOTE: EXT_CLS_UNKNOWN must stay 1, scr_ext_analyse copies loaded_buf
++// (1 = loaded) straight into cls_buf to initialise it.
++// not loaded
++#macro EXT_CLS_NONE     0
++// loaded, not yet classified
++#macro EXT_CLS_UNKNOWN  1
++// green  - traced from a strong entry point
++#macro EXT_CLS_SURE     2
++// yellow - traced from a weak entry or high heuristic score
++#macro EXT_CLS_LIKELY   3
++// orange - weak heuristic score
++#macro EXT_CLS_DOUBT    4
++// red    - definitely not code
++#macro EXT_CLS_NOT      5
++// blue   - graphics (phase 3)
++#macro EXT_CLS_GFX      6
++// purple - SID / music (phase 4)
++#macro EXT_CLS_MUSIC    7
++// cyan   - text (phase 3)
++#macro EXT_CLS_TEXT     8
++#macro EXT_CLS_COUNT    9
++
++// 6502 addressing modes
++#macro EXT_MODE_IMP  0
++#macro EXT_MODE_ACC  1
++#macro EXT_MODE_IMM  2
++#macro EXT_MODE_ZP   3
++#macro EXT_MODE_ZPX  4
++#macro EXT_MODE_ZPY  5
++#macro EXT_MODE_ABS  6
++#macro EXT_MODE_ABX  7
++#macro EXT_MODE_ABY  8
++#macro EXT_MODE_IND  9
++#macro EXT_MODE_IZX  10
++#macro EXT_MODE_IZY  11
++#macro EXT_MODE_REL  12
++
++// Control flow types used by the tracer
++#macro EXT_FLOW_NORMAL  0
++#macro EXT_FLOW_BRANCH  1
++#macro EXT_FLOW_JSR     2
++// JMP absolute
++#macro EXT_FLOW_JMP     3
++// RTS, RTI, BRK, JMP (indirect)
++#macro EXT_FLOW_STOP    4
++// KIL / JAM - CPU locks up, never real code
++#macro EXT_FLOW_JAM     5
++
++// Heuristic thresholds for untraced bytes
++#macro EXT_SEQ_LENGTH    12
++#macro EXT_LIKELY_SCORE  14
++#macro EXT_DOUBT_SCORE   6
+diff --git a/scripts/scr_ext_macros/scr_ext_macros.yy b/scripts/scr_ext_macros/scr_ext_macros.yy
+new file mode 100644
+index 0000000..333b4b4
+--- /dev/null
++++ b/scripts/scr_ext_macros/scr_ext_macros.yy
+@@ -0,0 +1,13 @@
++{
++  "$GMScript":"v1",
++  "%Name":"scr_ext_macros",
++  "isCompatibility":false,
++  "isDnD":false,
++  "name":"scr_ext_macros",
++  "parent":{
++    "name":"Scripts",
++    "path":"folders/Scripts.yy",
++  },
++  "resourceType":"GMScript",
++  "resourceVersion":"2.0",
++}
+\ No newline at end of file
+diff --git a/scripts/scr_ext_map/scr_ext_map.gml b/scripts/scr_ext_map/scr_ext_map.gml
+new file mode 100644
+index 0000000..86f13d8
+--- /dev/null
++++ b/scripts/scr_ext_map/scr_ext_map.gml
+@@ -0,0 +1,83 @@
++/// @desc scr_ext_cls_colour(cls)
++function scr_ext_cls_colour(_c) {
++    switch (_c) {
++        case EXT_CLS_NONE:    return make_colour_rgb(18, 18, 22);
++        case EXT_CLS_UNKNOWN: return make_colour_rgb(90, 90, 90);
++        case EXT_CLS_SURE:    return make_colour_rgb(60, 200, 80);
++        case EXT_CLS_LIKELY:  return make_colour_rgb(230, 210, 60);
++        case EXT_CLS_DOUBT:   return make_colour_rgb(240, 140, 40);
++        case EXT_CLS_NOT:     return make_colour_rgb(190, 50, 50);
++        case EXT_CLS_GFX:     return make_colour_rgb(60, 120, 230);
++        case EXT_CLS_MUSIC:   return make_colour_rgb(170, 90, 220);
++        case EXT_CLS_TEXT:    return make_colour_rgb(60, 200, 220);
++    }
++    return c_white;
++}
++
++/// @desc scr_ext_cls_name(cls)
++function scr_ext_cls_name(_c) {
++    switch (_c) {
++        case EXT_CLS_NONE:    return "Not loaded";
++        case EXT_CLS_UNKNOWN: return "Unknown";
++        case EXT_CLS_SURE:    return "Code (sure)";
++        case EXT_CLS_LIKELY:  return "Code (likely)";
++        case EXT_CLS_DOUBT:   return "Code (doubtful)";
++        case EXT_CLS_NOT:     return "Not code";
++        case EXT_CLS_GFX:     return "Graphics";
++        case EXT_CLS_MUSIC:   return "Music / SID";
++        case EXT_CLS_TEXT:    return "Text";
++    }
++    return "?";
++}
++
++/// @desc scr_ext_build_map()
++/// Redraws the 256x256 memory map surface: one pixel per byte, one row per page.
++function scr_ext_build_map() {
++    if (!surface_exists(map_surf)) {
++        map_surf = surface_create(256, 256);
++    }
++    var _cols = array_create(EXT_CLS_COUNT, 0);
++    for (var _i = 0; _i < EXT_CLS_COUNT; _i++) {
++        _cols[_i] = scr_ext_cls_colour(_i);
++    }
++
++    surface_set_target(map_surf);
++    draw_clear(_cols[EXT_CLS_NONE]);
++
++    for (var _y = 0; _y < 256; _y++) {
++        var _base = _y * 256;
++        if (map_shaded) {
++            // Brightness follows the byte value, so structure inside a class is visible
++            for (var _xs = 0; _xs < 256; _xs++) {
++                var _cs = buffer_peek(cls_buf, _base + _xs, buffer_u8);
++                if (_cs != EXT_CLS_NONE) {
++                    var _v = buffer_peek(mem_buf, _base + _xs, buffer_u8);
++                    var _col = merge_colour(c_black, _cols[_cs], 0.35 + 0.65 * (_v / 255));
++                    draw_point_colour(_xs, _y, _col);
++                }
++            }
++        }
++        else {
++            // Run-length rectangles; every run is drawn (including NONE) so any
++            // 1px overdraw from draw_rectangle is corrected by the next run / row
++            var _run_start = 0;
++            var _run_cls = buffer_peek(cls_buf, _base, buffer_u8);
++            for (var _x = 1; _x <= 256; _x++) {
++                var _c = -1;
++                if (_x < 256) {
++                    _c = buffer_peek(cls_buf, _base + _x, buffer_u8);
++                }
++                if (_c != _run_cls) {
++                    draw_set_colour(_cols[_run_cls]);
++                    draw_rectangle(_run_start, _y, _x, _y + 1, false);
++                    _run_start = _x;
++                    _run_cls = _c;
++                }
++            }
++        }
++    }
++
++    surface_reset_target();
++    draw_set_colour(c_white);
++    map_dirty = false;
++}
+diff --git a/scripts/scr_ext_map/scr_ext_map.yy b/scripts/scr_ext_map/scr_ext_map.yy
+new file mode 100644
+index 0000000..b6c2e0a
+--- /dev/null
++++ b/scripts/scr_ext_map/scr_ext_map.yy
+@@ -0,0 +1,13 @@
++{
++  "$GMScript":"v1",
++  "%Name":"scr_ext_map",
++  "isCompatibility":false,
++  "isDnD":false,
++  "name":"scr_ext_map",
++  "parent":{
++    "name":"Scripts",
++    "path":"folders/Scripts.yy",
++  },
++  "resourceType":"GMScript",
++  "resourceVersion":"2.0",
++}
+\ No newline at end of file
+diff --git a/scripts/scr_ext_opcode_table/scr_ext_opcode_table.gml b/scripts/scr_ext_opcode_table/scr_ext_opcode_table.gml
+new file mode 100644
+index 0000000..e68dd2b
+--- /dev/null
++++ b/scripts/scr_ext_opcode_table/scr_ext_opcode_table.gml
+@@ -0,0 +1,342 @@
++/// @desc scr_ext_opcode_table()
++/// Returns a 256-entry array indexed by opcode byte. Each entry is a struct:
++/// { opcode, mn, mode, size, illegal, unstable, flow }
++/// Includes every illegal opcode, since their presence drives the code / junk scoring.
++function scr_ext_opcode_table() {
++    var _t = array_create(256, 0);
++
++    _t[$00] = scr_ext_op($00, "BRK", EXT_MODE_IMP);
++    _t[$01] = scr_ext_op($01, "ORA", EXT_MODE_IZX);
++    _t[$02] = scr_ext_op($02, "JAM", EXT_MODE_IMP);
++    _t[$03] = scr_ext_op($03, "SLO", EXT_MODE_IZX);
++    _t[$04] = scr_ext_op($04, "NOP", EXT_MODE_ZP);
++    _t[$05] = scr_ext_op($05, "ORA", EXT_MODE_ZP);
++    _t[$06] = scr_ext_op($06, "ASL", EXT_MODE_ZP);
++    _t[$07] = scr_ext_op($07, "SLO", EXT_MODE_ZP);
++    _t[$08] = scr_ext_op($08, "PHP", EXT_MODE_IMP);
++    _t[$09] = scr_ext_op($09, "ORA", EXT_MODE_IMM);
++    _t[$0A] = scr_ext_op($0A, "ASL", EXT_MODE_ACC);
++    _t[$0B] = scr_ext_op($0B, "ANC", EXT_MODE_IMM);
++    _t[$0C] = scr_ext_op($0C, "NOP", EXT_MODE_ABS);
++    _t[$0D] = scr_ext_op($0D, "ORA", EXT_MODE_ABS);
++    _t[$0E] = scr_ext_op($0E, "ASL", EXT_MODE_ABS);
++    _t[$0F] = scr_ext_op($0F, "SLO", EXT_MODE_ABS);
++    _t[$10] = scr_ext_op($10, "BPL", EXT_MODE_REL);
++    _t[$11] = scr_ext_op($11, "ORA", EXT_MODE_IZY);
++    _t[$12] = scr_ext_op($12, "JAM", EXT_MODE_IMP);
++    _t[$13] = scr_ext_op($13, "SLO", EXT_MODE_IZY);
++    _t[$14] = scr_ext_op($14, "NOP", EXT_MODE_ZPX);
++    _t[$15] = scr_ext_op($15, "ORA", EXT_MODE_ZPX);
++    _t[$16] = scr_ext_op($16, "ASL", EXT_MODE_ZPX);
++    _t[$17] = scr_ext_op($17, "SLO", EXT_MODE_ZPX);
++    _t[$18] = scr_ext_op($18, "CLC", EXT_MODE_IMP);
++    _t[$19] = scr_ext_op($19, "ORA", EXT_MODE_ABY);
++    _t[$1A] = scr_ext_op($1A, "NOP", EXT_MODE_IMP);
++    _t[$1B] = scr_ext_op($1B, "SLO", EXT_MODE_ABY);
++    _t[$1C] = scr_ext_op($1C, "NOP", EXT_MODE_ABX);
++    _t[$1D] = scr_ext_op($1D, "ORA", EXT_MODE_ABX);
++    _t[$1E] = scr_ext_op($1E, "ASL", EXT_MODE_ABX);
++    _t[$1F] = scr_ext_op($1F, "SLO", EXT_MODE_ABX);
++    _t[$20] = scr_ext_op($20, "JSR", EXT_MODE_ABS);
++    _t[$21] = scr_ext_op($21, "AND", EXT_MODE_IZX);
++    _t[$22] = scr_ext_op($22, "JAM", EXT_MODE_IMP);
++    _t[$23] = scr_ext_op($23, "RLA", EXT_MODE_IZX);
++    _t[$24] = scr_ext_op($24, "BIT", EXT_MODE_ZP);
++    _t[$25] = scr_ext_op($25, "AND", EXT_MODE_ZP);
++    _t[$26] = scr_ext_op($26, "ROL", EXT_MODE_ZP);
++    _t[$27] = scr_ext_op($27, "RLA", EXT_MODE_ZP);
++    _t[$28] = scr_ext_op($28, "PLP", EXT_MODE_IMP);
++    _t[$29] = scr_ext_op($29, "AND", EXT_MODE_IMM);
++    _t[$2A] = scr_ext_op($2A, "ROL", EXT_MODE_ACC);
++    _t[$2B] = scr_ext_op($2B, "ANC", EXT_MODE_IMM);
++    _t[$2C] = scr_ext_op($2C, "BIT", EXT_MODE_ABS);
++    _t[$2D] = scr_ext_op($2D, "AND", EXT_MODE_ABS);
++    _t[$2E] = scr_ext_op($2E, "ROL", EXT_MODE_ABS);
++    _t[$2F] = scr_ext_op($2F, "RLA", EXT_MODE_ABS);
++    _t[$30] = scr_ext_op($30, "BMI", EXT_MODE_REL);
++    _t[$31] = scr_ext_op($31, "AND", EXT_MODE_IZY);
++    _t[$32] = scr_ext_op($32, "JAM", EXT_MODE_IMP);
++    _t[$33] = scr_ext_op($33, "RLA", EXT_MODE_IZY);
++    _t[$34] = scr_ext_op($34, "NOP", EXT_MODE_ZPX);
++    _t[$35] = scr_ext_op($35, "AND", EXT_MODE_ZPX);
++    _t[$36] = scr_ext_op($36, "ROL", EXT_MODE_ZPX);
++    _t[$37] = scr_ext_op($37, "RLA", EXT_MODE_ZPX);
++    _t[$38] = scr_ext_op($38, "SEC", EXT_MODE_IMP);
++    _t[$39] = scr_ext_op($39, "AND", EXT_MODE_ABY);
++    _t[$3A] = scr_ext_op($3A, "NOP", EXT_MODE_IMP);
++    _t[$3B] = scr_ext_op($3B, "RLA", EXT_MODE_ABY);
++    _t[$3C] = scr_ext_op($3C, "NOP", EXT_MODE_ABX);
++    _t[$3D] = scr_ext_op($3D, "AND", EXT_MODE_ABX);
++    _t[$3E] = scr_ext_op($3E, "ROL", EXT_MODE_ABX);
++    _t[$3F] = scr_ext_op($3F, "RLA", EXT_MODE_ABX);
++    _t[$40] = scr_ext_op($40, "RTI", EXT_MODE_IMP);
++    _t[$41] = scr_ext_op($41, "EOR", EXT_MODE_IZX);
++    _t[$42] = scr_ext_op($42, "JAM", EXT_MODE_IMP);
++    _t[$43] = scr_ext_op($43, "SRE", EXT_MODE_IZX);
++    _t[$44] = scr_ext_op($44, "NOP", EXT_MODE_ZP);
++    _t[$45] = scr_ext_op($45, "EOR", EXT_MODE_ZP);
++    _t[$46] = scr_ext_op($46, "LSR", EXT_MODE_ZP);
++    _t[$47] = scr_ext_op($47, "SRE", EXT_MODE_ZP);
++    _t[$48] = scr_ext_op($48, "PHA", EXT_MODE_IMP);
++    _t[$49] = scr_ext_op($49, "EOR", EXT_MODE_IMM);
++    _t[$4A] = scr_ext_op($4A, "LSR", EXT_MODE_ACC);
++    _t[$4B] = scr_ext_op($4B, "ALR", EXT_MODE_IMM);
++    _t[$4C] = scr_ext_op($4C, "JMP", EXT_MODE_ABS);
++    _t[$4D] = scr_ext_op($4D, "EOR", EXT_MODE_ABS);
++    _t[$4E] = scr_ext_op($4E, "LSR", EXT_MODE_ABS);
++    _t[$4F] = scr_ext_op($4F, "SRE", EXT_MODE_ABS);
++    _t[$50] = scr_ext_op($50, "BVC", EXT_MODE_REL);
++    _t[$51] = scr_ext_op($51, "EOR", EXT_MODE_IZY);
++    _t[$52] = scr_ext_op($52, "JAM", EXT_MODE_IMP);
++    _t[$53] = scr_ext_op($53, "SRE", EXT_MODE_IZY);
++    _t[$54] = scr_ext_op($54, "NOP", EXT_MODE_ZPX);
++    _t[$55] = scr_ext_op($55, "EOR", EXT_MODE_ZPX);
++    _t[$56] = scr_ext_op($56, "LSR", EXT_MODE_ZPX);
++    _t[$57] = scr_ext_op($57, "SRE", EXT_MODE_ZPX);
++    _t[$58] = scr_ext_op($58, "CLI", EXT_MODE_IMP);
++    _t[$59] = scr_ext_op($59, "EOR", EXT_MODE_ABY);
++    _t[$5A] = scr_ext_op($5A, "NOP", EXT_MODE_IMP);
++    _t[$5B] = scr_ext_op($5B, "SRE", EXT_MODE_ABY);
++    _t[$5C] = scr_ext_op($5C, "NOP", EXT_MODE_ABX);
++    _t[$5D] = scr_ext_op($5D, "EOR", EXT_MODE_ABX);
++    _t[$5E] = scr_ext_op($5E, "LSR", EXT_MODE_ABX);
++    _t[$5F] = scr_ext_op($5F, "SRE", EXT_MODE_ABX);
++    _t[$60] = scr_ext_op($60, "RTS", EXT_MODE_IMP);
++    _t[$61] = scr_ext_op($61, "ADC", EXT_MODE_IZX);
++    _t[$62] = scr_ext_op($62, "JAM", EXT_MODE_IMP);
++    _t[$63] = scr_ext_op($63, "RRA", EXT_MODE_IZX);
++    _t[$64] = scr_ext_op($64, "NOP", EXT_MODE_ZP);
++    _t[$65] = scr_ext_op($65, "ADC", EXT_MODE_ZP);
++    _t[$66] = scr_ext_op($66, "ROR", EXT_MODE_ZP);
++    _t[$67] = scr_ext_op($67, "RRA", EXT_MODE_ZP);
++    _t[$68] = scr_ext_op($68, "PLA", EXT_MODE_IMP);
++    _t[$69] = scr_ext_op($69, "ADC", EXT_MODE_IMM);
++    _t[$6A] = scr_ext_op($6A, "ROR", EXT_MODE_ACC);
++    _t[$6B] = scr_ext_op($6B, "ARR", EXT_MODE_IMM);
++    _t[$6C] = scr_ext_op($6C, "JMP", EXT_MODE_IND);
++    _t[$6D] = scr_ext_op($6D, "ADC", EXT_MODE_ABS);
++    _t[$6E] = scr_ext_op($6E, "ROR", EXT_MODE_ABS);
++    _t[$6F] = scr_ext_op($6F, "RRA", EXT_MODE_ABS);
++    _t[$70] = scr_ext_op($70, "BVS", EXT_MODE_REL);
++    _t[$71] = scr_ext_op($71, "ADC", EXT_MODE_IZY);
++    _t[$72] = scr_ext_op($72, "JAM", EXT_MODE_IMP);
++    _t[$73] = scr_ext_op($73, "RRA", EXT_MODE_IZY);
++    _t[$74] = scr_ext_op($74, "NOP", EXT_MODE_ZPX);
++    _t[$75] = scr_ext_op($75, "ADC", EXT_MODE_ZPX);
++    _t[$76] = scr_ext_op($76, "ROR", EXT_MODE_ZPX);
++    _t[$77] = scr_ext_op($77, "RRA", EXT_MODE_ZPX);
++    _t[$78] = scr_ext_op($78, "SEI", EXT_MODE_IMP);
++    _t[$79] = scr_ext_op($79, "ADC", EXT_MODE_ABY);
++    _t[$7A] = scr_ext_op($7A, "NOP", EXT_MODE_IMP);
++    _t[$7B] = scr_ext_op($7B, "RRA", EXT_MODE_ABY);
++    _t[$7C] = scr_ext_op($7C, "NOP", EXT_MODE_ABX);
++    _t[$7D] = scr_ext_op($7D, "ADC", EXT_MODE_ABX);
++    _t[$7E] = scr_ext_op($7E, "ROR", EXT_MODE_ABX);
++    _t[$7F] = scr_ext_op($7F, "RRA", EXT_MODE_ABX);
++    _t[$80] = scr_ext_op($80, "NOP", EXT_MODE_IMM);
++    _t[$81] = scr_ext_op($81, "STA", EXT_MODE_IZX);
++    _t[$82] = scr_ext_op($82, "NOP", EXT_MODE_IMM);
++    _t[$83] = scr_ext_op($83, "SAX", EXT_MODE_IZX);
++    _t[$84] = scr_ext_op($84, "STY", EXT_MODE_ZP);
++    _t[$85] = scr_ext_op($85, "STA", EXT_MODE_ZP);
++    _t[$86] = scr_ext_op($86, "STX", EXT_MODE_ZP);
++    _t[$87] = scr_ext_op($87, "SAX", EXT_MODE_ZP);
++    _t[$88] = scr_ext_op($88, "DEY", EXT_MODE_IMP);
++    _t[$89] = scr_ext_op($89, "NOP", EXT_MODE_IMM);
++    _t[$8A] = scr_ext_op($8A, "TXA", EXT_MODE_IMP);
++    _t[$8B] = scr_ext_op($8B, "ANE", EXT_MODE_IMM);
++    _t[$8C] = scr_ext_op($8C, "STY", EXT_MODE_ABS);
++    _t[$8D] = scr_ext_op($8D, "STA", EXT_MODE_ABS);
++    _t[$8E] = scr_ext_op($8E, "STX", EXT_MODE_ABS);
++    _t[$8F] = scr_ext_op($8F, "SAX", EXT_MODE_ABS);
++    _t[$90] = scr_ext_op($90, "BCC", EXT_MODE_REL);
++    _t[$91] = scr_ext_op($91, "STA", EXT_MODE_IZY);
++    _t[$92] = scr_ext_op($92, "JAM", EXT_MODE_IMP);
++    _t[$93] = scr_ext_op($93, "SHA", EXT_MODE_IZY);
++    _t[$94] = scr_ext_op($94, "STY", EXT_MODE_ZPX);
++    _t[$95] = scr_ext_op($95, "STA", EXT_MODE_ZPX);
++    _t[$96] = scr_ext_op($96, "STX", EXT_MODE_ZPY);
++    _t[$97] = scr_ext_op($97, "SAX", EXT_MODE_ZPY);
++    _t[$98] = scr_ext_op($98, "TYA", EXT_MODE_IMP);
++    _t[$99] = scr_ext_op($99, "STA", EXT_MODE_ABY);
++    _t[$9A] = scr_ext_op($9A, "TXS", EXT_MODE_IMP);
++    _t[$9B] = scr_ext_op($9B, "TAS", EXT_MODE_ABY);
++    _t[$9C] = scr_ext_op($9C, "SHY", EXT_MODE_ABX);
++    _t[$9D] = scr_ext_op($9D, "STA", EXT_MODE_ABX);
++    _t[$9E] = scr_ext_op($9E, "SHX", EXT_MODE_ABY);
++    _t[$9F] = scr_ext_op($9F, "SHA", EXT_MODE_ABY);
++    _t[$A0] = scr_ext_op($A0, "LDY", EXT_MODE_IMM);
++    _t[$A1] = scr_ext_op($A1, "LDA", EXT_MODE_IZX);
++    _t[$A2] = scr_ext_op($A2, "LDX", EXT_MODE_IMM);
++    _t[$A3] = scr_ext_op($A3, "LAX", EXT_MODE_IZX);
++    _t[$A4] = scr_ext_op($A4, "LDY", EXT_MODE_ZP);
++    _t[$A5] = scr_ext_op($A5, "LDA", EXT_MODE_ZP);
++    _t[$A6] = scr_ext_op($A6, "LDX", EXT_MODE_ZP);
++    _t[$A7] = scr_ext_op($A7, "LAX", EXT_MODE_ZP);
++    _t[$A8] = scr_ext_op($A8, "TAY", EXT_MODE_IMP);
++    _t[$A9] = scr_ext_op($A9, "LDA", EXT_MODE_IMM);
++    _t[$AA] = scr_ext_op($AA, "TAX", EXT_MODE_IMP);
++    _t[$AB] = scr_ext_op($AB, "LXA", EXT_MODE_IMM);
++    _t[$AC] = scr_ext_op($AC, "LDY", EXT_MODE_ABS);
++    _t[$AD] = scr_ext_op($AD, "LDA", EXT_MODE_ABS);
++    _t[$AE] = scr_ext_op($AE, "LDX", EXT_MODE_ABS);
++    _t[$AF] = scr_ext_op($AF, "LAX", EXT_MODE_ABS);
++    _t[$B0] = scr_ext_op($B0, "BCS", EXT_MODE_REL);
++    _t[$B1] = scr_ext_op($B1, "LDA", EXT_MODE_IZY);
++    _t[$B2] = scr_ext_op($B2, "JAM", EXT_MODE_IMP);
++    _t[$B3] = scr_ext_op($B3, "LAX", EXT_MODE_IZY);
++    _t[$B4] = scr_ext_op($B4, "LDY", EXT_MODE_ZPX);
++    _t[$B5] = scr_ext_op($B5, "LDA", EXT_MODE_ZPX);
++    _t[$B6] = scr_ext_op($B6, "LDX", EXT_MODE_ZPY);
++    _t[$B7] = scr_ext_op($B7, "LAX", EXT_MODE_ZPY);
++    _t[$B8] = scr_ext_op($B8, "CLV", EXT_MODE_IMP);
++    _t[$B9] = scr_ext_op($B9, "LDA", EXT_MODE_ABY);
++    _t[$BA] = scr_ext_op($BA, "TSX", EXT_MODE_IMP);
++    _t[$BB] = scr_ext_op($BB, "LAS", EXT_MODE_ABY);
++    _t[$BC] = scr_ext_op($BC, "LDY", EXT_MODE_ABX);
++    _t[$BD] = scr_ext_op($BD, "LDA", EXT_MODE_ABX);
++    _t[$BE] = scr_ext_op($BE, "LDX", EXT_MODE_ABY);
++    _t[$BF] = scr_ext_op($BF, "LAX", EXT_MODE_ABY);
++    _t[$C0] = scr_ext_op($C0, "CPY", EXT_MODE_IMM);
++    _t[$C1] = scr_ext_op($C1, "CMP", EXT_MODE_IZX);
++    _t[$C2] = scr_ext_op($C2, "NOP", EXT_MODE_IMM);
++    _t[$C3] = scr_ext_op($C3, "DCP", EXT_MODE_IZX);
++    _t[$C4] = scr_ext_op($C4, "CPY", EXT_MODE_ZP);
++    _t[$C5] = scr_ext_op($C5, "CMP", EXT_MODE_ZP);
++    _t[$C6] = scr_ext_op($C6, "DEC", EXT_MODE_ZP);
++    _t[$C7] = scr_ext_op($C7, "DCP", EXT_MODE_ZP);
++    _t[$C8] = scr_ext_op($C8, "INY", EXT_MODE_IMP);
++    _t[$C9] = scr_ext_op($C9, "CMP", EXT_MODE_IMM);
++    _t[$CA] = scr_ext_op($CA, "DEX", EXT_MODE_IMP);
++    _t[$CB] = scr_ext_op($CB, "SBX", EXT_MODE_IMM);
++    _t[$CC] = scr_ext_op($CC, "CPY", EXT_MODE_ABS);
++    _t[$CD] = scr_ext_op($CD, "CMP", EXT_MODE_ABS);
++    _t[$CE] = scr_ext_op($CE, "DEC", EXT_MODE_ABS);
++    _t[$CF] = scr_ext_op($CF, "DCP", EXT_MODE_ABS);
++    _t[$D0] = scr_ext_op($D0, "BNE", EXT_MODE_REL);
++    _t[$D1] = scr_ext_op($D1, "CMP", EXT_MODE_IZY);
++    _t[$D2] = scr_ext_op($D2, "JAM", EXT_MODE_IMP);
++    _t[$D3] = scr_ext_op($D3, "DCP", EXT_MODE_IZY);
++    _t[$D4] = scr_ext_op($D4, "NOP", EXT_MODE_ZPX);
++    _t[$D5] = scr_ext_op($D5, "CMP", EXT_MODE_ZPX);
++    _t[$D6] = scr_ext_op($D6, "DEC", EXT_MODE_ZPX);
++    _t[$D7] = scr_ext_op($D7, "DCP", EXT_MODE_ZPX);
++    _t[$D8] = scr_ext_op($D8, "CLD", EXT_MODE_IMP);
++    _t[$D9] = scr_ext_op($D9, "CMP", EXT_MODE_ABY);
++    _t[$DA] = scr_ext_op($DA, "NOP", EXT_MODE_IMP);
++    _t[$DB] = scr_ext_op($DB, "DCP", EXT_MODE_ABY);
++    _t[$DC] = scr_ext_op($DC, "NOP", EXT_MODE_ABX);
++    _t[$DD] = scr_ext_op($DD, "CMP", EXT_MODE_ABX);
++    _t[$DE] = scr_ext_op($DE, "DEC", EXT_MODE_ABX);
++    _t[$DF] = scr_ext_op($DF, "DCP", EXT_MODE_ABX);
++    _t[$E0] = scr_ext_op($E0, "CPX", EXT_MODE_IMM);
++    _t[$E1] = scr_ext_op($E1, "SBC", EXT_MODE_IZX);
++    _t[$E2] = scr_ext_op($E2, "NOP", EXT_MODE_IMM);
++    _t[$E3] = scr_ext_op($E3, "ISC", EXT_MODE_IZX);
++    _t[$E4] = scr_ext_op($E4, "CPX", EXT_MODE_ZP);
++    _t[$E5] = scr_ext_op($E5, "SBC", EXT_MODE_ZP);
++    _t[$E6] = scr_ext_op($E6, "INC", EXT_MODE_ZP);
++    _t[$E7] = scr_ext_op($E7, "ISC", EXT_MODE_ZP);
++    _t[$E8] = scr_ext_op($E8, "INX", EXT_MODE_IMP);
++    _t[$E9] = scr_ext_op($E9, "SBC", EXT_MODE_IMM);
++    _t[$EA] = scr_ext_op($EA, "NOP", EXT_MODE_IMP);
++    _t[$EB] = scr_ext_op($EB, "SBC", EXT_MODE_IMM);
++    _t[$EC] = scr_ext_op($EC, "CPX", EXT_MODE_ABS);
++    _t[$ED] = scr_ext_op($ED, "SBC", EXT_MODE_ABS);
++    _t[$EE] = scr_ext_op($EE, "INC", EXT_MODE_ABS);
++    _t[$EF] = scr_ext_op($EF, "ISC", EXT_MODE_ABS);
++    _t[$F0] = scr_ext_op($F0, "BEQ", EXT_MODE_REL);
++    _t[$F1] = scr_ext_op($F1, "SBC", EXT_MODE_IZY);
++    _t[$F2] = scr_ext_op($F2, "JAM", EXT_MODE_IMP);
++    _t[$F3] = scr_ext_op($F3, "ISC", EXT_MODE_IZY);
++    _t[$F4] = scr_ext_op($F4, "NOP", EXT_MODE_ZPX);
++    _t[$F5] = scr_ext_op($F5, "SBC", EXT_MODE_ZPX);
++    _t[$F6] = scr_ext_op($F6, "INC", EXT_MODE_ZPX);
++    _t[$F7] = scr_ext_op($F7, "ISC", EXT_MODE_ZPX);
++    _t[$F8] = scr_ext_op($F8, "SED", EXT_MODE_IMP);
++    _t[$F9] = scr_ext_op($F9, "SBC", EXT_MODE_ABY);
++    _t[$FA] = scr_ext_op($FA, "NOP", EXT_MODE_IMP);
++    _t[$FB] = scr_ext_op($FB, "ISC", EXT_MODE_ABY);
++    _t[$FC] = scr_ext_op($FC, "NOP", EXT_MODE_ABX);
++    _t[$FD] = scr_ext_op($FD, "SBC", EXT_MODE_ABX);
++    _t[$FE] = scr_ext_op($FE, "INC", EXT_MODE_ABX);
++    _t[$FF] = scr_ext_op($FF, "ISC", EXT_MODE_ABX);
++
++    return _t;
++}
++
++/// @desc scr_ext_op(opcode, mnemonic, mode)
++/// Builds one decode-table entry.
++function scr_ext_op(_opcode, _mn, _mode) {
++    var _size = 2;
++    switch (_mode) {
++        case EXT_MODE_IMP:
++        case EXT_MODE_ACC:
++            _size = 1;
++            break;
++        case EXT_MODE_ABS:
++        case EXT_MODE_ABX:
++        case EXT_MODE_ABY:
++        case EXT_MODE_IND:
++            _size = 3;
++            break;
++        default:
++            _size = 2;
++            break;
++    }
++
++    var _illegal = false;
++    var _unstable = false;
++    switch (_mn) {
++        case "JAM": case "SLO": case "RLA": case "SRE": case "RRA":
++        case "SAX": case "LAX": case "DCP": case "ISC": case "ANC":
++        case "ALR": case "ARR": case "SBX":
++            _illegal = true;
++            break;
++        case "ANE": case "LXA": case "SHA": case "TAS": case "SHY":
++        case "SHX": case "LAS":
++            _illegal = true;
++            _unstable = true;
++            break;
++    }
++    if (_mn == "NOP") {
++        if (_opcode != $EA) {
++            _illegal = true;
++        }
++    }
++    if (_opcode == $EB) {
++        _illegal = true;
++    }
++
++    var _flow = EXT_FLOW_NORMAL;
++    if (_mode == EXT_MODE_REL) {
++        _flow = EXT_FLOW_BRANCH;
++    }
++    else if (_mn == "JSR") {
++        _flow = EXT_FLOW_JSR;
++    }
++    else if (_mn == "JMP") {
++        if (_mode == EXT_MODE_ABS) {
++            _flow = EXT_FLOW_JMP;
++        }
++        else {
++            _flow = EXT_FLOW_STOP;
++        }
++    }
++    else if (_mn == "RTS" || _mn == "RTI" || _mn == "BRK") {
++        _flow = EXT_FLOW_STOP;
++    }
++    else if (_mn == "JAM") {
++        _flow = EXT_FLOW_JAM;
++    }
++
++    return {
++        opcode   : _opcode,
++        mn       : _mn,
++        mode     : _mode,
++        size     : _size,
++        illegal  : _illegal,
++        unstable : _unstable,
++        flow     : _flow
++    };
++}
+diff --git a/scripts/scr_ext_opcode_table/scr_ext_opcode_table.yy b/scripts/scr_ext_opcode_table/scr_ext_opcode_table.yy
+new file mode 100644
+index 0000000..f895fdc
+--- /dev/null
++++ b/scripts/scr_ext_opcode_table/scr_ext_opcode_table.yy
+@@ -0,0 +1,13 @@
++{
++  "$GMScript":"v1",
++  "%Name":"scr_ext_opcode_table",
++  "isCompatibility":false,
++  "isDnD":false,
++  "name":"scr_ext_opcode_table",
++  "parent":{
++    "name":"Scripts",
++    "path":"folders/Scripts.yy",
++  },
++  "resourceType":"GMScript",
++  "resourceVersion":"2.0",
++}
+\ No newline at end of file
+diff --git a/scripts/scr_ext_util/scr_ext_util.gml b/scripts/scr_ext_util/scr_ext_util.gml
+new file mode 100644
+index 0000000..2ecf6dc
+--- /dev/null
++++ b/scripts/scr_ext_util/scr_ext_util.gml
+@@ -0,0 +1,99 @@
++/// @desc scr_ext_hex(value, digits)
++/// Upper-case hex string, zero padded to the given number of digits.
++function scr_ext_hex(_value, _digits) {
++    var _chars = "0123456789ABCDEF";
++    var _out = "";
++    var _v = floor(_value);
++    for (var _i = 0; _i < _digits; _i++) {
++        var _nib = _v & $F;
++        _out = string_char_at(_chars, _nib + 1) + _out;
++        _v = _v >> 4;
++    }
++    return _out;
++}
++
++/// @desc scr_ext_peek8(addr) - byte from C64 memory, address wraps at 64K.
++function scr_ext_peek8(_addr) {
++    return buffer_peek(mem_buf, _addr & $FFFF, buffer_u8);
++}
++
++/// @desc scr_ext_peek16(addr) - little-endian word from C64 memory.
++function scr_ext_peek16(_addr) {
++    var _lo = buffer_peek(mem_buf, _addr & $FFFF, buffer_u8);
++    var _hi = buffer_peek(mem_buf, (_addr + 1) & $FFFF, buffer_u8);
++    return _lo + (_hi << 8);
++}
++
++/// @desc scr_ext_is_loaded(addr)
++function scr_ext_is_loaded(_addr) {
++    return buffer_peek(loaded_buf, _addr & $FFFF, buffer_u8) == 1;
++}
++
++/// @desc scr_ext_petscii_char(value)
++/// Printable character for the hex view's text column and D64 names.
++function scr_ext_petscii_char(_v) {
++    if (_v >= $20 && _v <= $5F) {
++        return chr(_v);
++    }
++    if (_v >= $C1 && _v <= $DA) {
++        return chr(_v - $80);
++    }
++    return ".";
++}
++
++/// @desc scr_ext_set_cursor(addr, move_views)
++/// Sets the cursor; optionally scrolls the hex and disassembly views to it.
++function scr_ext_set_cursor(_addr, _move_views) {
++    cursor_addr = _addr & $FFFF;
++    if (_move_views) {
++        var _ht = (cursor_addr & $FFF8) - 8 * 8;
++        if (_ht < 0) {
++            _ht = 0;
++        }
++        var _hmax = 65536 - hex_rows * 8;
++        if (_ht > _hmax) {
++            _ht = _hmax;
++        }
++        hex_top = _ht;
++        dis_top = scr_ext_align_to_instr(cursor_addr);
++    }
++}
++
++/// @desc scr_ext_do_action(action, overlay)
++/// Shared handler for toolbar buttons and hotkeys.
++function scr_ext_do_action(_action, _overlay) {
++    switch (_action) {
++        case "open":
++            var _path = get_open_filename("C64 files|*.prg;*.d64;*.bin;*.raw;*.dump;*.crt;*.tap;*.t64|All files|*.*", "");
++            io_clear();
++            if (_path != "") {
++                scr_ext_load_path(_path, _overlay);
++            }
++            break;
++
++        case "trace":
++            if (scr_ext_is_loaded(cursor_addr)) {
++                array_push(manual_entries, cursor_addr);
++                scr_ext_analyse();
++                status_text = "Traced code from $" + scr_ext_hex(cursor_addr, 4) + " (manual entry point).";
++            }
++            else {
++                status_text = "Cursor is on memory that isn't loaded.";
++            }
++            break;
++
++        case "analyse":
++            scr_ext_analyse();
++            break;
++
++        case "shade":
++            if (map_shaded) {
++                map_shaded = false;
++            }
++            else {
++                map_shaded = true;
++            }
++            map_dirty = true;
++            break;
++    }
++}
+diff --git a/scripts/scr_ext_util/scr_ext_util.yy b/scripts/scr_ext_util/scr_ext_util.yy
+new file mode 100644
+index 0000000..85dd809
+--- /dev/null
++++ b/scripts/scr_ext_util/scr_ext_util.yy
+@@ -0,0 +1,13 @@
++{
++  "$GMScript":"v1",
++  "%Name":"scr_ext_util",
++  "isCompatibility":false,
++  "isDnD":false,
++  "name":"scr_ext_util",
++  "parent":{
++    "name":"Scripts",
++    "path":"folders/Scripts.yy",
++  },
++  "resourceType":"GMScript",
++  "resourceVersion":"2.0",
++}
+\ No newline at end of file
