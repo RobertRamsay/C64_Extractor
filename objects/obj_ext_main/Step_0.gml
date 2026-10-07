@@ -67,6 +67,15 @@ if (_lmb_pressed) {
     }
 }
 
+// ---- Shift+press over map / viewer / hex / disassembly starts a selection at the cursor ----
+if (_lmb_pressed && _shift && !_sb_busy) {
+    if (scr_ext_in_select_panel(_mx, _my)) {
+        sel_dragging = true;
+        sel_anchor = cursor_addr;
+        _lmb_pressed = false;
+    }
+}
+
 // ---- Toolbar ----
 if (_lmb_pressed) {
     for (var _i = 0; _i < array_length(buttons); _i++) {
@@ -131,6 +140,32 @@ for (var _k = 0; _k < EXT_GFX_MODE_COUNT; _k++) {
         scr_ext_gfx_do_button({ action : "gmode", arg : _k }, false);
     }
 }
+if (keyboard_check_pressed(ord("X"))) {
+    scr_ext_do_action("export", false);
+}
+if (keyboard_check_pressed(ord("W"))) {
+    scr_ext_sel_region();
+}
+if (keyboard_check_pressed(vk_escape)) {
+    sel_active = false;
+    sel_dragging = false;
+}
+if (keyboard_check_pressed(ord("B"))) {
+    if (sel_active) {
+        scr_ext_sel_set(cursor_addr, sel_end);
+    }
+    else {
+        scr_ext_sel_set(cursor_addr, cursor_addr);
+    }
+}
+if (keyboard_check_pressed(ord("E"))) {
+    if (sel_active) {
+        scr_ext_sel_set(sel_start, cursor_addr);
+    }
+    else {
+        scr_ext_sel_set(cursor_addr, cursor_addr);
+    }
+}
 if (keyboard_check_pressed(vk_left)) {
     scr_ext_set_cursor(cursor_addr - 1, false);
 }
@@ -162,7 +197,7 @@ if (point_in_rectangle(_mx, _my, map_x, map_y, map_x + _map_size - 1, map_y + _m
     var _cx = floor((_mx - map_x) / map_scale);
     var _cy = floor((_my - map_y) / map_scale);
     hover_addr = _cy * 256 + _cx;
-    if (_lmb_held && !_sb_busy) {
+    if (_lmb_held && !_sb_busy && !sel_dragging) {
         scr_ext_set_cursor(hover_addr, true);
     }
     if (_wheel != 0) {
@@ -258,5 +293,17 @@ if (point_in_rectangle(_mx, _my, dir_x, dir_y, dir_x + dir_w - EXT_SB_W - 4, dir
         if (_frow >= 0 && _frow < dir_rows && _idx < _n_files) {
             scr_ext_d64_load_entry(_idx, _shift);
         }
+    }
+}
+
+// ---- Selection drag: extend from the anchor to whatever is under the mouse ----
+if (sel_dragging) {
+    if (_lmb_held) {
+        if (hover_addr >= 0) {
+            scr_ext_sel_set(sel_anchor, hover_addr);
+        }
+    }
+    else {
+        sel_dragging = false;
     }
 }

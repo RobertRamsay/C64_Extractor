@@ -1,0 +1,371 @@
+diff --git a/objects/obj_ext_main/Create_0.gml b/objects/obj_ext_main/Create_0.gml
+index cf6f190..8066c53 100644
+--- a/objects/obj_ext_main/Create_0.gml
++++ b/objects/obj_ext_main/Create_0.gml
+@@ -124,6 +124,13 @@ sb_dis = scr_ext_sb_create();
+ sb_dir = scr_ext_sb_create();
+ sb_gfx = scr_ext_sb_create();
+ 
++// ---- Selection (inclusive range) ----
++sel_active = false;
++sel_dragging = false;
++sel_anchor = 0;
++sel_start = 0;
++sel_end = 0;
++
+ cursor_addr = 0;
+ hover_addr = -1;
+ status_text = "Press O to open a PRG, D64 or 64K memory dump. Hold Shift to overlay onto memory.";
+@@ -134,7 +141,8 @@ buttons = [
+     { bx : 292, by : 8, bw : 140, bh : 24, label : "Trace cursor [C]", action : "trace" },
+     { bx : 438, by : 8, bw : 110, bh : 24, label : "Analyse [R]",      action : "analyse" },
+     { bx : 554, by : 8, bw : 120, bh : 24, label : "Shade map [V]",    action : "shade" },
+-    { bx : 680, by : 8, bw : 130, bh : 24, label : "Fullscreen [F11]", action : "fullscreen" }
++    { bx : 680, by : 8, bw : 130, bh : 24, label : "Fullscreen [F11]", action : "fullscreen" },
++    { bx : 816, by : 8, bw : 140, bh : 24, label : "Export sel [X]",   action : "export" }
+ ];
+ 
+ // ---- Colours ----
+@@ -152,6 +160,7 @@ col_button_on = make_colour_rgb(50, 90, 150);
+ col_sb_track  = make_colour_rgb(16, 16, 22);
+ col_sb_thumb  = make_colour_rgb(80, 80, 110);
+ col_gfx_range = make_colour_rgb(60, 120, 230);
++col_sel       = make_colour_rgb(70, 110, 70);
+ 
+ gpu_set_texfilter(false);
+ scr_ext_reset_memory();
+diff --git a/objects/obj_ext_main/Draw_64.gml b/objects/obj_ext_main/Draw_64.gml
+index d987422..b717319 100644
+--- a/objects/obj_ext_main/Draw_64.gml
++++ b/objects/obj_ext_main/Draw_64.gml
+@@ -20,7 +20,7 @@ for (var _i = 0; _i < array_length(buttons); _i++) {
+     scr_ext_draw_button(buttons[_i], false);
+ }
+ draw_set_colour(col_dim);
+-draw_text(830, 12, "1-6: viewer mode   F: follow   G: grid   Shift+wheel on viewer: 1 byte   Shift+click swatch: previous colour");
++draw_text(970, 12, "Shift+drag: select   W: region   B/E: sel begin/end   Esc: clear   1-6: modes   F: follow   G: grid");
+ 
+ // ---- Memory map ----
+ var _map_size = 256 * map_scale;
+@@ -48,6 +48,26 @@ if (_g2 > 0xFFFF) {
+ draw_set_colour(col_gfx_range);
+ draw_rectangle(map_x + _map_size + 3, map_y + (_g1 >> 8) * map_scale, map_x + _map_size + 6, map_y + (_g2 >> 8) * map_scale + map_scale, false);
+ 
++// Selection overlay
++if (sel_active) {
++    draw_set_alpha(0.45);
++    draw_set_colour(c_white);
++    var _p1 = sel_start >> 8;
++    var _p2 = sel_end >> 8;
++    for (var _pg2 = _p1; _pg2 <= _p2; _pg2++) {
++        var _x1 = 0;
++        var _x2 = 255;
++        if (_pg2 == _p1) {
++            _x1 = sel_start & 0xFF;
++        }
++        if (_pg2 == _p2) {
++            _x2 = sel_end & 0xFF;
++        }
++        draw_rectangle(map_x + _x1 * map_scale, map_y + _pg2 * map_scale, map_x + (_x2 + 1) * map_scale - 1, map_y + (_pg2 + 1) * map_scale - 1, false);
++    }
++    draw_set_alpha(1);
++}
++
+ // Cursor marker
+ var _cx = map_x + (cursor_addr & 0xFF) * map_scale;
+ var _cy = map_y + (cursor_addr >> 8) * map_scale;
+@@ -69,6 +89,10 @@ for (var _r = 0; _r < hex_rows; _r++) {
+         var _a = (_base + _j) & 0xFFFF;
+         var _c = buffer_peek(cls_buf, _a, buffer_u8);
+         var _bx = hex_x + 52 + _j * 26;
++        if (sel_active && _a >= sel_start && _a <= sel_end) {
++            draw_set_colour(col_sel);
++            draw_rectangle(_bx - 3, _ly2, _bx + 22, _ly2 + line_h - 1, false);
++        }
+         if (_a == cursor_addr) {
+             draw_set_colour(col_cursor);
+             draw_rectangle(_bx - 3, _ly2, _bx + 19, _ly2 + line_h - 1, false);
+@@ -98,6 +122,10 @@ for (var _r = 0; _r < dis_rows; _r++) {
+     var _line = scr_ext_disasm_line(_da);
+     dis_line_addrs[_r] = _da;
+     var _dy = dis_y + _r * line_h;
++    if (sel_active && _da >= sel_start && _da <= sel_end) {
++        draw_set_colour(col_sel);
++        draw_rectangle(dis_x - 4, _dy, dis_x + dis_w - EXT_SB_W - 6, _dy + line_h - 1, false);
++    }
+     if (cursor_addr >= _da && cursor_addr < _da + _line.size) {
+         draw_set_colour(col_cursor);
+         draw_rectangle(dis_x - 4, _dy, dis_x + dis_w - EXT_SB_W - 6, _dy + line_h - 1, false);
+@@ -195,7 +223,11 @@ if (_ent_n == 0) {
+     _ent_text += "  none - put the cursor on code and press C";
+ }
+ draw_text(info_x, _iy, _ent_text);
+-_iy += line_h * 2;
++if (sel_active) {
++    draw_set_colour(col_text);
++    draw_text(info_x, _iy, "Selection $" + scr_ext_hex(sel_start, 4) + "-$" + scr_ext_hex(sel_end, 4) + "  (" + string(sel_end - sel_start + 1) + " bytes)   X = export");
++}
++_iy += line_h;
+ 
+ draw_set_colour(col_text);
+ draw_text(info_x, _iy, "Cursor $" + scr_ext_hex(cursor_addr, 4) + "  value $" + scr_ext_hex(buffer_peek(mem_buf, cursor_addr, buffer_u8), 2) + "  " + scr_ext_cls_name(buffer_peek(cls_buf, cursor_addr, buffer_u8)));
+diff --git a/objects/obj_ext_main/Step_0.gml b/objects/obj_ext_main/Step_0.gml
+index 0aba0ce..d609ef7 100644
+--- a/objects/obj_ext_main/Step_0.gml
++++ b/objects/obj_ext_main/Step_0.gml
+@@ -67,6 +67,15 @@ if (_lmb_pressed) {
+     }
+ }
+ 
++// ---- Shift+press over map / viewer / hex / disassembly starts a selection at the cursor ----
++if (_lmb_pressed && _shift && !_sb_busy) {
++    if (scr_ext_in_select_panel(_mx, _my)) {
++        sel_dragging = true;
++        sel_anchor = cursor_addr;
++        _lmb_pressed = false;
++    }
++}
++
+ // ---- Toolbar ----
+ if (_lmb_pressed) {
+     for (var _i = 0; _i < array_length(buttons); _i++) {
+@@ -131,6 +140,32 @@ for (var _k = 0; _k < EXT_GFX_MODE_COUNT; _k++) {
+         scr_ext_gfx_do_button({ action : "gmode", arg : _k }, false);
+     }
+ }
++if (keyboard_check_pressed(ord("X"))) {
++    scr_ext_do_action("export", false);
++}
++if (keyboard_check_pressed(ord("W"))) {
++    scr_ext_sel_region();
++}
++if (keyboard_check_pressed(vk_escape)) {
++    sel_active = false;
++    sel_dragging = false;
++}
++if (keyboard_check_pressed(ord("B"))) {
++    if (sel_active) {
++        scr_ext_sel_set(cursor_addr, sel_end);
++    }
++    else {
++        scr_ext_sel_set(cursor_addr, cursor_addr);
++    }
++}
++if (keyboard_check_pressed(ord("E"))) {
++    if (sel_active) {
++        scr_ext_sel_set(sel_start, cursor_addr);
++    }
++    else {
++        scr_ext_sel_set(cursor_addr, cursor_addr);
++    }
++}
+ if (keyboard_check_pressed(vk_left)) {
+     scr_ext_set_cursor(cursor_addr - 1, false);
+ }
+@@ -162,7 +197,7 @@ if (point_in_rectangle(_mx, _my, map_x, map_y, map_x + _map_size - 1, map_y + _m
+     var _cx = floor((_mx - map_x) / map_scale);
+     var _cy = floor((_my - map_y) / map_scale);
+     hover_addr = _cy * 256 + _cx;
+-    if (_lmb_held && !_sb_busy) {
++    if (_lmb_held && !_sb_busy && !sel_dragging) {
+         scr_ext_set_cursor(hover_addr, true);
+     }
+     if (_wheel != 0) {
+@@ -260,3 +295,15 @@ if (point_in_rectangle(_mx, _my, dir_x, dir_y, dir_x + dir_w - EXT_SB_W - 4, dir
+         }
+     }
+ }
++
++// ---- Selection drag: extend from the anchor to whatever is under the mouse ----
++if (sel_dragging) {
++    if (_lmb_held) {
++        if (hover_addr >= 0) {
++            scr_ext_sel_set(sel_anchor, hover_addr);
++        }
++    }
++    else {
++        sel_dragging = false;
++    }
++}
+diff --git a/scripts/scr_ext_gfx/scr_ext_gfx.gml b/scripts/scr_ext_gfx/scr_ext_gfx.gml
+index d4824be..3aeaa41 100644
+--- a/scripts/scr_ext_gfx/scr_ext_gfx.gml
++++ b/scripts/scr_ext_gfx/scr_ext_gfx.gml
+@@ -75,7 +75,9 @@ function scr_ext_gfx_build_buttons() {
+     array_push(gfx_buttons, { bx : _bx, by : _by, bw : 80, bh : 22, label : "Follow [F]", action : "gfollow", arg : 0 });
+     _bx += 84;
+     array_push(gfx_buttons, { bx : _bx, by : _by, bw : 70, bh : 22, label : "Grid [G]", action : "ggrid", arg : 0 });
+-    _bx += 84;
++    _bx += 74;
++    array_push(gfx_buttons, { bx : _bx, by : _by, bw : 84, bh : 22, label : "Select view", action : "gselview", arg : 0 });
++    _bx += 98;
+ 
+     // Colour swatches: BG, MC1, MC2, FG
+     gfx_swatch_x = _bx;
+@@ -214,6 +216,14 @@ function scr_ext_gfx_do_button(_b, _shift) {
+             }
+             break;
+ 
++        case "gselview":
++            var _end = gfx_addr + gfx_screen_bytes - 1;
++            if (_end > 0xFFFF) {
++                _end = 0xFFFF;
++            }
++            scr_ext_sel_set(gfx_addr, _end);
++            break;
++
+         case "ggrid":
+             if (gfx_grid) {
+                 gfx_grid = false;
+@@ -415,6 +425,23 @@ function scr_ext_gfx_draw() {
+         draw_set_alpha(1);
+     }
+ 
++    // Selection overlay on the cells it touches
++    if (sel_active) {
++        draw_set_alpha(0.35);
++        draw_set_colour(c_white);
++        var _cells = gfx_row_cols * gfx_rows;
++        for (var _sc = 0; _sc < _cells; _sc++) {
++            var _c1 = gfx_addr + _sc * gfx_cell_bytes;
++            var _c2 = _c1 + gfx_cell_bytes - 1;
++            if (_c1 <= 0xFFFF && _c2 >= sel_start && _c1 <= sel_end) {
++                var _sx1 = gfx_canvas_x + (_sc mod gfx_row_cols) * _pitch_w;
++                var _sy1 = gfx_canvas_y + (_sc div gfx_row_cols) * _pitch_h;
++                draw_rectangle(_sx1, _sy1, _sx1 + gfx_cell_w * gfx_zoom - 1, _sy1 + gfx_cell_h * gfx_zoom - 1, false);
++            }
++        }
++        draw_set_alpha(1);
++    }
++
+     // Cursor cell
+     var _rel = (cursor_addr - gfx_addr + 65536) mod 65536;
+     if (_rel < gfx_screen_bytes) {
+diff --git a/scripts/scr_ext_util/scr_ext_util.gml b/scripts/scr_ext_util/scr_ext_util.gml
+index 6527687..7aa3609 100644
+--- a/scripts/scr_ext_util/scr_ext_util.gml
++++ b/scripts/scr_ext_util/scr_ext_util.gml
+@@ -102,6 +102,10 @@ function scr_ext_do_action(_action, _overlay) {
+             }
+             break;
+ 
++        case "export":
++            scr_ext_export_selection();
++            break;
++
+         case "shade":
+             if (map_shaded) {
+                 map_shaded = false;
+@@ -134,3 +138,112 @@ function scr_ext_set_full_window(_on) {
+     map_dirty = true;
+     gfx_dirty = true;
+ }
++
++/// @desc scr_ext_sel_set(a, b)
++/// Selects the inclusive range between two addresses (either order).
++function scr_ext_sel_set(_a, _b) {
++    var _x = _a & 0xFFFF;
++    var _y = _b & 0xFFFF;
++    sel_active = true;
++    if (_x <= _y) {
++        sel_start = _x;
++        sel_end = _y;
++    }
++    else {
++        sel_start = _y;
++        sel_end = _x;
++    }
++}
++
++/// @desc scr_ext_sel_region()
++/// Selects the run of bytes around the cursor that share its classification
++/// (e.g. one block of green code or one red data block).
++function scr_ext_sel_region() {
++    var _c = buffer_peek(cls_buf, cursor_addr, buffer_u8);
++    var _a = cursor_addr;
++    while (_a > 0) {
++        if (buffer_peek(cls_buf, _a - 1, buffer_u8) != _c) {
++            break;
++        }
++        _a -= 1;
++    }
++    var _b = cursor_addr;
++    while (_b < 0xFFFF) {
++        if (buffer_peek(cls_buf, _b + 1, buffer_u8) != _c) {
++            break;
++        }
++        _b += 1;
++    }
++    scr_ext_sel_set(_a, _b);
++}
++
++/// @desc scr_ext_in_select_panel(mx, my)
++/// True when the point is over a panel that supports Shift+drag selection.
++function scr_ext_in_select_panel(_mx, _my) {
++    var _map_size = 256 * map_scale;
++    if (point_in_rectangle(_mx, _my, map_x, map_y, map_x + _map_size - 1, map_y + _map_size - 1)) {
++        return true;
++    }
++    if (point_in_rectangle(_mx, _my, gfx_canvas_x, gfx_canvas_y, gfx_canvas_x + gfx_canvas_w, gfx_canvas_y + gfx_canvas_h)) {
++        return true;
++    }
++    if (point_in_rectangle(_mx, _my, hex_x, hex_y, hex_x + hex_w - EXT_SB_W - 6, hex_y + hex_rows * line_h - 1)) {
++        return true;
++    }
++    if (point_in_rectangle(_mx, _my, dis_x, dis_y, dis_x + dis_w - EXT_SB_W - 6, dis_y + dis_rows * line_h - 1)) {
++        return true;
++    }
++    return false;
++}
++
++/// @desc scr_ext_export_selection()
++/// Saves the selection as raw binary, or as a PRG (2-byte load address first)
++/// when the chosen file name ends in .prg.
++function scr_ext_export_selection() {
++    if (!sel_active) {
++        status_text = "Nothing selected - Shift+drag over memory, or press W to select a region.";
++        return;
++    }
++    var _len = sel_end - sel_start + 1;
++    var _default = "ext_" + scr_ext_hex(sel_start, 4) + "-" + scr_ext_hex(sel_end, 4) + ".bin";
++    var _path = get_save_filename("Raw binary|*.bin|PRG with load address|*.prg|All files|*.*", _default);
++    io_clear();
++    last_win_w = 0;
++    map_dirty = true;
++    gfx_dirty = true;
++    if (_path == "") {
++        return;
++    }
++
++    var _prg = false;
++    if (string_lower(filename_ext(_path)) == ".prg") {
++        _prg = true;
++    }
++    var _hdr = 0;
++    if (_prg) {
++        _hdr = 2;
++    }
++
++    var _out = buffer_create(_len + _hdr, buffer_fixed, 1);
++    if (_prg) {
++        buffer_poke(_out, 0, buffer_u8, sel_start & 0xFF);
++        buffer_poke(_out, 1, buffer_u8, sel_start >> 8);
++    }
++    buffer_copy(mem_buf, sel_start, _len, _out, _hdr);
++    buffer_save(_out, _path);
++    buffer_delete(_out);
++
++    var _missing = 0;
++    for (var _i = sel_start; _i <= sel_end; _i++) {
++        if (buffer_peek(loaded_buf, _i, buffer_u8) == 0) {
++            _missing += 1;
++        }
++    }
++    status_text = "Exported " + string(_len) + " bytes to " + filename_name(_path);
++    if (_prg) {
++        status_text += " (PRG, load $" + scr_ext_hex(sel_start, 4) + ")";
++    }
++    if (_missing > 0) {
++        status_text += " - " + string(_missing) + " bytes were not loaded (saved as $00)";
++    }
++}

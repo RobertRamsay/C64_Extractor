@@ -124,6 +124,13 @@ sb_dis = scr_ext_sb_create();
 sb_dir = scr_ext_sb_create();
 sb_gfx = scr_ext_sb_create();
 
+// ---- Selection (inclusive range) ----
+sel_active = false;
+sel_dragging = false;
+sel_anchor = 0;
+sel_start = 0;
+sel_end = 0;
+
 cursor_addr = 0;
 hover_addr = -1;
 status_text = "Press O to open a PRG, D64 or 64K memory dump. Hold Shift to overlay onto memory.";
@@ -134,7 +141,8 @@ buttons = [
     { bx : 292, by : 8, bw : 140, bh : 24, label : "Trace cursor [C]", action : "trace" },
     { bx : 438, by : 8, bw : 110, bh : 24, label : "Analyse [R]",      action : "analyse" },
     { bx : 554, by : 8, bw : 120, bh : 24, label : "Shade map [V]",    action : "shade" },
-    { bx : 680, by : 8, bw : 130, bh : 24, label : "Fullscreen [F11]", action : "fullscreen" }
+    { bx : 680, by : 8, bw : 130, bh : 24, label : "Fullscreen [F11]", action : "fullscreen" },
+    { bx : 816, by : 8, bw : 140, bh : 24, label : "Export sel [X]",   action : "export" }
 ];
 
 // ---- Colours ----
@@ -152,6 +160,7 @@ col_button_on = make_colour_rgb(50, 90, 150);
 col_sb_track  = make_colour_rgb(16, 16, 22);
 col_sb_thumb  = make_colour_rgb(80, 80, 110);
 col_gfx_range = make_colour_rgb(60, 120, 230);
+col_sel       = make_colour_rgb(70, 110, 70);
 
 gpu_set_texfilter(false);
 scr_ext_reset_memory();

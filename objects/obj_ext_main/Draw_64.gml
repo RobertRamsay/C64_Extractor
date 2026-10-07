@@ -20,7 +20,7 @@ for (var _i = 0; _i < array_length(buttons); _i++) {
     scr_ext_draw_button(buttons[_i], false);
 }
 draw_set_colour(col_dim);
-draw_text(830, 12, "1-6: viewer mode   F: follow   G: grid   Shift+wheel on viewer: 1 byte   Shift+click swatch: previous colour");
+draw_text(970, 12, "Shift+drag: select   W: region   B/E: sel begin/end   Esc: clear   1-6: modes   F: follow   G: grid");
 
 // ---- Memory map ----
 var _map_size = 256 * map_scale;
@@ -48,6 +48,26 @@ if (_g2 > 0xFFFF) {
 draw_set_colour(col_gfx_range);
 draw_rectangle(map_x + _map_size + 3, map_y + (_g1 >> 8) * map_scale, map_x + _map_size + 6, map_y + (_g2 >> 8) * map_scale + map_scale, false);
 
+// Selection overlay
+if (sel_active) {
+    draw_set_alpha(0.45);
+    draw_set_colour(c_white);
+    var _p1 = sel_start >> 8;
+    var _p2 = sel_end >> 8;
+    for (var _pg2 = _p1; _pg2 <= _p2; _pg2++) {
+        var _x1 = 0;
+        var _x2 = 255;
+        if (_pg2 == _p1) {
+            _x1 = sel_start & 0xFF;
+        }
+        if (_pg2 == _p2) {
+            _x2 = sel_end & 0xFF;
+        }
+        draw_rectangle(map_x + _x1 * map_scale, map_y + _pg2 * map_scale, map_x + (_x2 + 1) * map_scale - 1, map_y + (_pg2 + 1) * map_scale - 1, false);
+    }
+    draw_set_alpha(1);
+}
+
 // Cursor marker
 var _cx = map_x + (cursor_addr & 0xFF) * map_scale;
 var _cy = map_y + (cursor_addr >> 8) * map_scale;
@@ -69,6 +89,10 @@ for (var _r = 0; _r < hex_rows; _r++) {
         var _a = (_base + _j) & 0xFFFF;
         var _c = buffer_peek(cls_buf, _a, buffer_u8);
         var _bx = hex_x + 52 + _j * 26;
+        if (sel_active && _a >= sel_start && _a <= sel_end) {
+            draw_set_colour(col_sel);
+            draw_rectangle(_bx - 3, _ly2, _bx + 22, _ly2 + line_h - 1, false);
+        }
         if (_a == cursor_addr) {
             draw_set_colour(col_cursor);
             draw_rectangle(_bx - 3, _ly2, _bx + 19, _ly2 + line_h - 1, false);
@@ -98,6 +122,10 @@ for (var _r = 0; _r < dis_rows; _r++) {
     var _line = scr_ext_disasm_line(_da);
     dis_line_addrs[_r] = _da;
     var _dy = dis_y + _r * line_h;
+    if (sel_active && _da >= sel_start && _da <= sel_end) {
+        draw_set_colour(col_sel);
+        draw_rectangle(dis_x - 4, _dy, dis_x + dis_w - EXT_SB_W - 6, _dy + line_h - 1, false);
+    }
     if (cursor_addr >= _da && cursor_addr < _da + _line.size) {
         draw_set_colour(col_cursor);
         draw_rectangle(dis_x - 4, _dy, dis_x + dis_w - EXT_SB_W - 6, _dy + line_h - 1, false);
@@ -195,7 +223,11 @@ if (_ent_n == 0) {
     _ent_text += "  none - put the cursor on code and press C";
 }
 draw_text(info_x, _iy, _ent_text);
-_iy += line_h * 2;
+if (sel_active) {
+    draw_set_colour(col_text);
+    draw_text(info_x, _iy, "Selection $" + scr_ext_hex(sel_start, 4) + "-$" + scr_ext_hex(sel_end, 4) + "  (" + string(sel_end - sel_start + 1) + " bytes)   X = export");
+}
+_iy += line_h;
 
 draw_set_colour(col_text);
 draw_text(info_x, _iy, "Cursor $" + scr_ext_hex(cursor_addr, 4) + "  value $" + scr_ext_hex(buffer_peek(mem_buf, cursor_addr, buffer_u8), 2) + "  " + scr_ext_cls_name(buffer_peek(cls_buf, cursor_addr, buffer_u8)));

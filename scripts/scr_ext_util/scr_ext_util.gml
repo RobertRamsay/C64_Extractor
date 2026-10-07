@@ -102,6 +102,10 @@ function scr_ext_do_action(_action, _overlay) {
             }
             break;
 
+        case "export":
+            scr_ext_export_selection();
+            break;
+
         case "shade":
             if (map_shaded) {
                 map_shaded = false;
@@ -133,4 +137,113 @@ function scr_ext_set_full_window(_on) {
     last_win_w = 0;
     map_dirty = true;
     gfx_dirty = true;
+}
+
+/// @desc scr_ext_sel_set(a, b)
+/// Selects the inclusive range between two addresses (either order).
+function scr_ext_sel_set(_a, _b) {
+    var _x = _a & 0xFFFF;
+    var _y = _b & 0xFFFF;
+    sel_active = true;
+    if (_x <= _y) {
+        sel_start = _x;
+        sel_end = _y;
+    }
+    else {
+        sel_start = _y;
+        sel_end = _x;
+    }
+}
+
+/// @desc scr_ext_sel_region()
+/// Selects the run of bytes around the cursor that share its classification
+/// (e.g. one block of green code or one red data block).
+function scr_ext_sel_region() {
+    var _c = buffer_peek(cls_buf, cursor_addr, buffer_u8);
+    var _a = cursor_addr;
+    while (_a > 0) {
+        if (buffer_peek(cls_buf, _a - 1, buffer_u8) != _c) {
+            break;
+        }
+        _a -= 1;
+    }
+    var _b = cursor_addr;
+    while (_b < 0xFFFF) {
+        if (buffer_peek(cls_buf, _b + 1, buffer_u8) != _c) {
+            break;
+        }
+        _b += 1;
+    }
+    scr_ext_sel_set(_a, _b);
+}
+
+/// @desc scr_ext_in_select_panel(mx, my)
+/// True when the point is over a panel that supports Shift+drag selection.
+function scr_ext_in_select_panel(_mx, _my) {
+    var _map_size = 256 * map_scale;
+    if (point_in_rectangle(_mx, _my, map_x, map_y, map_x + _map_size - 1, map_y + _map_size - 1)) {
+        return true;
+    }
+    if (point_in_rectangle(_mx, _my, gfx_canvas_x, gfx_canvas_y, gfx_canvas_x + gfx_canvas_w, gfx_canvas_y + gfx_canvas_h)) {
+        return true;
+    }
+    if (point_in_rectangle(_mx, _my, hex_x, hex_y, hex_x + hex_w - EXT_SB_W - 6, hex_y + hex_rows * line_h - 1)) {
+        return true;
+    }
+    if (point_in_rectangle(_mx, _my, dis_x, dis_y, dis_x + dis_w - EXT_SB_W - 6, dis_y + dis_rows * line_h - 1)) {
+        return true;
+    }
+    return false;
+}
+
+/// @desc scr_ext_export_selection()
+/// Saves the selection as raw binary, or as a PRG (2-byte load address first)
+/// when the chosen file name ends in .prg.
+function scr_ext_export_selection() {
+    if (!sel_active) {
+        status_text = "Nothing selected - Shift+drag over memory, or press W to select a region.";
+        return;
+    }
+    var _len = sel_end - sel_start + 1;
+    var _default = "ext_" + scr_ext_hex(sel_start, 4) + "-" + scr_ext_hex(sel_end, 4) + ".bin";
+    var _path = get_save_filename("Raw binary|*.bin|PRG with load address|*.prg|All files|*.*", _default);
+    io_clear();
+    last_win_w = 0;
+    map_dirty = true;
+    gfx_dirty = true;
+    if (_path == "") {
+        return;
+    }
+
+    var _prg = false;
+    if (string_lower(filename_ext(_path)) == ".prg") {
+        _prg = true;
+    }
+    var _hdr = 0;
+    if (_prg) {
+        _hdr = 2;
+    }
+
+    var _out = buffer_create(_len + _hdr, buffer_fixed, 1);
+    if (_prg) {
+        buffer_poke(_out, 0, buffer_u8, sel_start & 0xFF);
+        buffer_poke(_out, 1, buffer_u8, sel_start >> 8);
+    }
+    buffer_copy(mem_buf, sel_start, _len, _out, _hdr);
+    buffer_save(_out, _path);
+    buffer_delete(_out);
+
+    var _missing = 0;
+    for (var _i = sel_start; _i <= sel_end; _i++) {
+        if (buffer_peek(loaded_buf, _i, buffer_u8) == 0) {
+            _missing += 1;
+        }
+    }
+    status_text = "Exported " + string(_len) + " bytes to " + filename_name(_path);
+    if (_prg) {
+        status_text += " (PRG, load $" + scr_ext_hex(sel_start, 4) + ")";
+    }
+    if (_missing > 0) {
+        status_text += " - " + string(_missing) + " bytes were not loaded (saved as $00)";
+    }
 }

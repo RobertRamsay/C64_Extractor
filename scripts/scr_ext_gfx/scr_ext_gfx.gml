@@ -75,7 +75,9 @@ function scr_ext_gfx_build_buttons() {
     array_push(gfx_buttons, { bx : _bx, by : _by, bw : 80, bh : 22, label : "Follow [F]", action : "gfollow", arg : 0 });
     _bx += 84;
     array_push(gfx_buttons, { bx : _bx, by : _by, bw : 70, bh : 22, label : "Grid [G]", action : "ggrid", arg : 0 });
-    _bx += 84;
+    _bx += 74;
+    array_push(gfx_buttons, { bx : _bx, by : _by, bw : 84, bh : 22, label : "Select view", action : "gselview", arg : 0 });
+    _bx += 98;
 
     // Colour swatches: BG, MC1, MC2, FG
     gfx_swatch_x = _bx;
@@ -212,6 +214,14 @@ function scr_ext_gfx_do_button(_b, _shift) {
                 gfx_follow = true;
                 scr_ext_gfx_follow();
             }
+            break;
+
+        case "gselview":
+            var _end = gfx_addr + gfx_screen_bytes - 1;
+            if (_end > 0xFFFF) {
+                _end = 0xFFFF;
+            }
+            scr_ext_sel_set(gfx_addr, _end);
             break;
 
         case "ggrid":
@@ -411,6 +421,23 @@ function scr_ext_gfx_draw() {
         for (var _gy = 1; _gy < gfx_rows; _gy++) {
             var _ly = gfx_canvas_y + _gy * _pitch_h;
             draw_line(gfx_canvas_x, _ly, gfx_canvas_x + _iw, _ly);
+        }
+        draw_set_alpha(1);
+    }
+
+    // Selection overlay on the cells it touches
+    if (sel_active) {
+        draw_set_alpha(0.35);
+        draw_set_colour(c_white);
+        var _cells = gfx_row_cols * gfx_rows;
+        for (var _sc = 0; _sc < _cells; _sc++) {
+            var _c1 = gfx_addr + _sc * gfx_cell_bytes;
+            var _c2 = _c1 + gfx_cell_bytes - 1;
+            if (_c1 <= 0xFFFF && _c2 >= sel_start && _c1 <= sel_end) {
+                var _sx1 = gfx_canvas_x + (_sc mod gfx_row_cols) * _pitch_w;
+                var _sy1 = gfx_canvas_y + (_sc div gfx_row_cols) * _pitch_h;
+                draw_rectangle(_sx1, _sy1, _sx1 + gfx_cell_w * gfx_zoom - 1, _sy1 + gfx_cell_h * gfx_zoom - 1, false);
+            }
         }
         draw_set_alpha(1);
     }
