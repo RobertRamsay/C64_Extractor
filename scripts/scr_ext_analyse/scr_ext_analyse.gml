@@ -41,9 +41,9 @@ function scr_ext_find_entries() {
 
     if (is_dump) {
         // Interrupt / reset vectors, skipping the stock KERNAL handlers
-        var _vec_addr = [$0314, $0318, $FFFA, $FFFC, $FFFE];
+        var _vec_addr = [0x0314, 0x0318, 0xFFFA, 0xFFFC, 0xFFFE];
         var _vec_name = ["IRQ $0314", "NMI $0318", "NMI $FFFA", "RESET $FFFC", "IRQ $FFFE"];
-        var _rom_default = [$EA31, $EA81, $EA7E, $FE47, $FE43, $FE66, $FCE2, $FF48];
+        var _rom_default = [0xEA31, 0xEA81, 0xEA7E, 0xFE47, 0xFE43, 0xFE66, 0xFCE2, 0xFF48];
         for (var _i = 0; _i < array_length(_vec_addr); _i++) {
             var _a = scr_ext_peek16(_vec_addr[_i]);
             var _skip = false;
@@ -61,7 +61,7 @@ function scr_ext_find_entries() {
 
     for (var _s = 0; _s < array_length(segments); _s++) {
         var _seg = segments[_s];
-        if (_seg.start == $0801) {
+        if (_seg.start == 0x0801) {
             var _found = scr_ext_find_basic_sys();
             for (var _k = 0; _k < array_length(_found); _k++) {
                 array_push(_list, { addr : _found[_k], strong : true, why : "BASIC SYS" });
@@ -78,7 +78,7 @@ function scr_ext_find_entries() {
 /// Walks the BASIC program at $0801 and returns every SYS target found.
 function scr_ext_find_basic_sys() {
     var _out = [];
-    var _p = $0801;
+    var _p = 0x0801;
     var _lines = 0;
     while (_lines < 10) {
         if (!scr_ext_is_loaded(_p)) {
@@ -95,17 +95,17 @@ function scr_ext_find_basic_sys() {
             if (_b == 0) {
                 break;
             }
-            if (_b == $9E) {
+            if (_b == 0x9E) {
                 var _r = _q + 1;
                 var _rb = scr_ext_peek8(_r);
-                while (_rb == $20 || _rb == $28) {
+                while (_rb == 0x20 || _rb == 0x28) {
                     _r++;
                     _rb = scr_ext_peek8(_r);
                 }
                 var _val = 0;
                 var _digits = 0;
-                while (_rb >= $30 && _rb <= $39 && _digits < 5) {
-                    _val = _val * 10 + (_rb - $30);
+                while (_rb >= 0x30 && _rb <= 0x39 && _digits < 5) {
+                    _val = _val * 10 + (_rb - 0x30);
                     _digits++;
                     _r++;
                     _rb = scr_ext_peek8(_r);
@@ -134,7 +134,7 @@ function scr_ext_op_target(_a, _op) {
             if (_d > 127) {
                 _d -= 256;
             }
-            return (_a + 2 + _d) & $FFFF;
+            return (_a + 2 + _d) & 0xFFFF;
         case EXT_MODE_ABS:
         case EXT_MODE_ABX:
         case EXT_MODE_ABY:
@@ -156,7 +156,7 @@ function scr_ext_op_target(_a, _op) {
 /// (EXT_CLS_SURE or EXT_CLS_LIKELY) and follows branches, JSR and JMP.
 function scr_ext_trace(_start, _level) {
     var _ops = global.ext_ops;
-    var _stack = [_start & $FFFF];
+    var _stack = [_start & 0xFFFF];
     var _guard = 0;
     var _max = 200000;
 
@@ -192,7 +192,7 @@ function scr_ext_trace(_start, _level) {
 
             var _ok = true;
             for (var _k = 0; _k < _op.size; _k++) {
-                var _b = (_a + _k) & $FFFF;
+                var _b = (_a + _k) & 0xFFFF;
                 if (buffer_peek(loaded_buf, _b, buffer_u8) == 0) {
                     _ok = false;
                 }
@@ -208,7 +208,7 @@ function scr_ext_trace(_start, _level) {
 
             buffer_poke(istart_buf, _a, buffer_u8, 1);
             for (var _k = 0; _k < _op.size; _k++) {
-                var _b = (_a + _k) & $FFFF;
+                var _b = (_a + _k) & 0xFFFF;
                 if (buffer_peek(cls_buf, _b, buffer_u8) != EXT_CLS_SURE) {
                     buffer_poke(cls_buf, _b, buffer_u8, _level);
                 }
@@ -227,7 +227,7 @@ function scr_ext_trace(_start, _level) {
                     _walking = false;
                     break;
             }
-            _a = (_a + _op.size) & $FFFF;
+            _a = (_a + _op.size) & 0xFFFF;
         }
     }
 }
@@ -258,14 +258,14 @@ function scr_ext_seq_score(_p) {
             _score -= 8;
             break;
         }
-        if (_byte == $00) {
+        if (_byte == 0x00) {
             _score -= 5;
             break;
         }
 
         var _bad = false;
         for (var _k = 1; _k < _op.size; _k++) {
-            if (buffer_peek(loaded_buf, (_a + _k) & $FFFF, buffer_u8) == 0) {
+            if (buffer_peek(loaded_buf, (_a + _k) & 0xFFFF, buffer_u8) == 0) {
                 _bad = true;
             }
         }
@@ -302,19 +302,19 @@ function scr_ext_seq_score(_p) {
         // Absolute operands: where do they point?
         if (_op.size == 3) {
             var _t = scr_ext_peek16(_a + 1);
-            if (_t < $0100) {
+            if (_t < 0x0100) {
                 _score -= 2;        // assemblers use zero-page modes for these
             }
-            else if (_t >= $D000 && _t < $E000) {
+            else if (_t >= 0xD000 && _t < 0xE000) {
                 _score += 2;        // VIC / SID / CIA / colour RAM
             }
-            else if (_t >= $FF81 && _t <= $FFF3) {
+            else if (_t >= 0xFF81 && _t <= 0xFFF3) {
                 _score += 2;        // KERNAL jump table
             }
             else if (buffer_peek(loaded_buf, _t, buffer_u8) == 1) {
                 _score += 1;
             }
-            else if (_t < $0400) {
+            else if (_t < 0x0400) {
                 _score += 1;        // stack, vectors, system area
             }
             else {
@@ -336,7 +336,7 @@ function scr_ext_seq_score(_p) {
             _score += 3;
             break;
         }
-        _a = (_a + _op.size) & $FFFF;
+        _a = (_a + _op.size) & 0xFFFF;
     }
     return _score;
 }

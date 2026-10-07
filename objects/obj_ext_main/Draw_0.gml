@@ -43,12 +43,12 @@ draw_rectangle(map_x - 1, map_y - 1, map_x + _map_size, map_y + _map_size, true)
 
 // Hex view range bracket on the left edge of the map
 var _hy1 = map_y + (hex_top >> 8) * map_scale;
-var _hy2 = map_y + (((hex_top + hex_rows * 8 - 1) & $FFFF) >> 8) * map_scale + map_scale;
+var _hy2 = map_y + (((hex_top + hex_rows * 8 - 1) & 0xFFFF) >> 8) * map_scale + map_scale;
 draw_set_colour(col_dim);
 draw_rectangle(map_x - 6, _hy1, map_x - 3, _hy2, false);
 
 // Cursor marker
-var _cx = map_x + (cursor_addr & $FF) * map_scale;
+var _cx = map_x + (cursor_addr & 0xFF) * map_scale;
 var _cy = map_y + (cursor_addr >> 8) * map_scale;
 draw_set_colour(c_white);
 draw_rectangle(_cx - 2, _cy - 2, _cx + map_scale + 1, _cy + map_scale + 1, true);
@@ -57,13 +57,13 @@ draw_rectangle(_cx - 2, _cy - 2, _cx + map_scale + 1, _cy + map_scale + 1, true)
 draw_set_colour(col_panel);
 draw_rectangle(hex_x - 6, hex_y - 6, hex_x + hex_w, hex_y + hex_rows * line_h + 2, false);
 for (var _r = 0; _r < hex_rows; _r++) {
-    var _base = (hex_top + _r * 8) & $FFFF;
+    var _base = (hex_top + _r * 8) & 0xFFFF;
     var _ly = hex_y + _r * line_h;
     draw_set_colour(col_dim);
     draw_text(hex_x, _ly, scr_ext_hex(_base, 4));
     var _ascii = "";
     for (var _j = 0; _j < 8; _j++) {
-        var _a = (_base + _j) & $FFFF;
+        var _a = (_base + _j) & 0xFFFF;
         var _c = buffer_peek(cls_buf, _a, buffer_u8);
         var _bx = hex_x + 48 + _j * 24;
         if (_a == cursor_addr) {
@@ -112,7 +112,7 @@ for (var _r = 0; _r < dis_rows; _r++) {
         draw_set_colour(scr_ext_cls_colour(_line.cls));
     }
     draw_text(dis_x + 140, _dy, _line.text);
-    _da = (_da + _line.size) & $FFFF;
+    _da = (_da + _line.size) & 0xFFFF;
 }
 
 // ---- D64 directory ----

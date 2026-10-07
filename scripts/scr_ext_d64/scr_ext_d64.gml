@@ -34,7 +34,7 @@ function scr_ext_d64_name(_offset, _max) {
     var _s = "";
     for (var _i = 0; _i < _max; _i++) {
         var _b = buffer_peek(d64_buf, _offset + _i, buffer_u8);
-        if (_b == $A0) {
+        if (_b == 0xA0) {
             break;
         }
         _s += scr_ext_petscii_char(_b);
@@ -62,7 +62,7 @@ function scr_ext_d64_open(_size) {
     }
 
     var _bam = scr_ext_d64_offset(18, 0);
-    d64_disk_name = scr_ext_d64_name(_bam + $90, 16);
+    d64_disk_name = scr_ext_d64_name(_bam + 0x90, 16);
 
     var _type_names = ["DEL", "SEQ", "PRG", "USR", "REL", "???", "???", "???"];
     var _t = 18;

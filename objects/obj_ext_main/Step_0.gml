@@ -44,14 +44,14 @@ if (keyboard_check_pressed(vk_right)) {
     scr_ext_set_cursor(cursor_addr + 1, false);
 }
 if (keyboard_check_pressed(vk_down)) {
-    dis_top = (dis_top + scr_ext_disasm_line(dis_top).size) & $FFFF;
+    dis_top = (dis_top + scr_ext_disasm_line(dis_top).size) & 0xFFFF;
 }
 if (keyboard_check_pressed(vk_up)) {
     dis_top = scr_ext_prev_line_start(dis_top);
 }
 if (keyboard_check_pressed(vk_pagedown)) {
     repeat (dis_rows - 1) {
-        dis_top = (dis_top + scr_ext_disasm_line(dis_top).size) & $FFFF;
+        dis_top = (dis_top + scr_ext_disasm_line(dis_top).size) & 0xFFFF;
     }
 }
 if (keyboard_check_pressed(vk_pageup)) {
@@ -82,7 +82,7 @@ if (point_in_rectangle(_mx, _my, hex_x, hex_y, hex_x + hex_w, hex_y + _hex_h - 1
     var _row = floor((_my - hex_y) / line_h);
     var _col = floor((_mx - (hex_x + 48)) / 24);
     if (_col >= 0 && _col < 8) {
-        hover_addr = (hex_top + _row * 8 + _col) & $FFFF;
+        hover_addr = (hex_top + _row * 8 + _col) & 0xFFFF;
         if (_lmb_pressed) {
             scr_ext_set_cursor(hover_addr, false);
             dis_top = scr_ext_align_to_instr(hover_addr);
@@ -109,7 +109,7 @@ if (point_in_rectangle(_mx, _my, dis_x, dis_y, dis_x + dis_w, dis_y + _dis_h - 1
         hover_addr = dis_line_addrs[_drow];
         if (_lmb_pressed) {
             scr_ext_set_cursor(hover_addr, false);
-            var _ht2 = (hover_addr & $FFF8) - 8 * 8;
+            var _ht2 = (hover_addr & 0xFFF8) - 8 * 8;
             if (_ht2 < 0) {
                 _ht2 = 0;
             }
@@ -121,7 +121,7 @@ if (point_in_rectangle(_mx, _my, dis_x, dis_y, dis_x + dis_w, dis_y + _dis_h - 1
     }
     if (_wheel > 0) {
         repeat (3) {
-            dis_top = (dis_top + scr_ext_disasm_line(dis_top).size) & $FFFF;
+            dis_top = (dis_top + scr_ext_disasm_line(dis_top).size) & 0xFFFF;
         }
     }
     if (_wheel < 0) {

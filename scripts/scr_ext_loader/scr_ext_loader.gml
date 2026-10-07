@@ -90,7 +90,7 @@ function scr_ext_load_path(_path, _overlay) {
         buffer_copy(_buf, 0, 65536, mem_buf, 0);
         buffer_fill(loaded_buf, 0, buffer_u8, 1, 65536);
         is_dump = true;
-        array_push(segments, { start : 0, finish : $FFFF, name : file_name });
+        array_push(segments, { start : 0, finish : 0xFFFF, name : file_name });
         file_kind = "64K memory dump";
         _ok = true;
     }

@@ -5,7 +5,7 @@ function scr_ext_hex(_value, _digits) {
     var _out = "";
     var _v = floor(_value);
     for (var _i = 0; _i < _digits; _i++) {
-        var _nib = _v & $F;
+        var _nib = _v & 0xF;
         _out = string_char_at(_chars, _nib + 1) + _out;
         _v = _v >> 4;
     }
@@ -14,29 +14,29 @@ function scr_ext_hex(_value, _digits) {
 
 /// @desc scr_ext_peek8(addr) - byte from C64 memory, address wraps at 64K.
 function scr_ext_peek8(_addr) {
-    return buffer_peek(mem_buf, _addr & $FFFF, buffer_u8);
+    return buffer_peek(mem_buf, _addr & 0xFFFF, buffer_u8);
 }
 
 /// @desc scr_ext_peek16(addr) - little-endian word from C64 memory.
 function scr_ext_peek16(_addr) {
-    var _lo = buffer_peek(mem_buf, _addr & $FFFF, buffer_u8);
-    var _hi = buffer_peek(mem_buf, (_addr + 1) & $FFFF, buffer_u8);
+    var _lo = buffer_peek(mem_buf, _addr & 0xFFFF, buffer_u8);
+    var _hi = buffer_peek(mem_buf, (_addr + 1) & 0xFFFF, buffer_u8);
     return _lo + (_hi << 8);
 }
 
 /// @desc scr_ext_is_loaded(addr)
 function scr_ext_is_loaded(_addr) {
-    return buffer_peek(loaded_buf, _addr & $FFFF, buffer_u8) == 1;
+    return buffer_peek(loaded_buf, _addr & 0xFFFF, buffer_u8) == 1;
 }
 
 /// @desc scr_ext_petscii_char(value)
 /// Printable character for the hex view's text column and D64 names.
 function scr_ext_petscii_char(_v) {
-    if (_v >= $20 && _v <= $5F) {
+    if (_v >= 0x20 && _v <= 0x5F) {
         return chr(_v);
     }
-    if (_v >= $C1 && _v <= $DA) {
-        return chr(_v - $80);
+    if (_v >= 0xC1 && _v <= 0xDA) {
+        return chr(_v - 0x80);
     }
     return ".";
 }
@@ -44,9 +44,9 @@ function scr_ext_petscii_char(_v) {
 /// @desc scr_ext_set_cursor(addr, move_views)
 /// Sets the cursor; optionally scrolls the hex and disassembly views to it.
 function scr_ext_set_cursor(_addr, _move_views) {
-    cursor_addr = _addr & $FFFF;
+    cursor_addr = _addr & 0xFFFF;
     if (_move_views) {
-        var _ht = (cursor_addr & $FFF8) - 8 * 8;
+        var _ht = (cursor_addr & 0xFFF8) - 8 * 8;
         if (_ht < 0) {
             _ht = 0;
         }

@@ -23,7 +23,7 @@ function scr_ext_format_operand(_a, _op) {
 /// otherwise up to 4 data bytes of the same class, or a collapsed not-loaded run.
 /// Returns { addr, size, bytes, text, cls, entry }.
 function scr_ext_disasm_line(_a) {
-    var _addr = _a & $FFFF;
+    var _addr = _a & 0xFFFF;
     var _cls = buffer_peek(cls_buf, _addr, buffer_u8);
     var _line = {
         addr  : _addr,
@@ -42,7 +42,7 @@ function scr_ext_disasm_line(_a) {
                 break;
             }
             _n++;
-            _b = (_b + 1) & $FFFF;
+            _b = (_b + 1) & 0xFFFF;
             if (_b == 0) {
                 break;
             }
@@ -80,7 +80,7 @@ function scr_ext_disasm_line(_a) {
     var _text_d = ".byte ";
     var _bytes_d = "";
     while (_count < 4) {
-        var _bd = (_addr + _count) & $FFFF;
+        var _bd = (_addr + _count) & 0xFFFF;
         if (_count > 0) {
             if (buffer_peek(cls_buf, _bd, buffer_u8) != _cls) {
                 break;
@@ -107,12 +107,12 @@ function scr_ext_disasm_line(_a) {
 /// @desc scr_ext_align_to_instr(addr)
 /// If addr sits inside a decoded instruction, returns that instruction's start.
 function scr_ext_align_to_instr(_a) {
-    var _addr = _a & $FFFF;
+    var _addr = _a & 0xFFFF;
     if (buffer_peek(istart_buf, _addr, buffer_u8) == 1) {
         return _addr;
     }
     for (var _k = 1; _k <= 2; _k++) {
-        var _b = (_addr - _k) & $FFFF;
+        var _b = (_addr - _k) & 0xFFFF;
         if (buffer_peek(istart_buf, _b, buffer_u8) == 1) {
             if (global.ext_ops[buffer_peek(mem_buf, _b, buffer_u8)].size > _k) {
                 return _b;
@@ -125,15 +125,15 @@ function scr_ext_align_to_instr(_a) {
 /// @desc scr_ext_prev_line_start(addr)
 /// Best guess at the start of the disassembly line before addr (for scrolling up).
 function scr_ext_prev_line_start(_a) {
-    var _addr = _a & $FFFF;
-    var _prev = (_addr - 1) & $FFFF;
+    var _addr = _a & 0xFFFF;
+    var _prev = (_addr - 1) & 0xFFFF;
 
     // Not-loaded run: jump back over it (up to a page)
     if (buffer_peek(loaded_buf, _prev, buffer_u8) == 0) {
         var _n = 1;
         var _b = _prev;
         while (_n < 256) {
-            var _c = (_b - 1) & $FFFF;
+            var _c = (_b - 1) & 0xFFFF;
             if (buffer_peek(loaded_buf, _c, buffer_u8) == 1) {
                 break;
             }
@@ -145,7 +145,7 @@ function scr_ext_prev_line_start(_a) {
 
     // An instruction that ends exactly at addr
     for (var _k = 1; _k <= 3; _k++) {
-        var _s = (_addr - _k) & $FFFF;
+        var _s = (_addr - _k) & 0xFFFF;
         if (buffer_peek(istart_buf, _s, buffer_u8) == 1) {
             if (global.ext_ops[buffer_peek(mem_buf, _s, buffer_u8)].size == _k) {
                 return _s;
@@ -156,7 +156,7 @@ function scr_ext_prev_line_start(_a) {
     // Data: step back up to 4 bytes, stopping at code or not-loaded memory
     var _step = 1;
     while (_step < 4) {
-        var _d = (_addr - _step - 1) & $FFFF;
+        var _d = (_addr - _step - 1) & 0xFFFF;
         if (buffer_peek(loaded_buf, _d, buffer_u8) == 0) {
             break;
         }
@@ -165,5 +165,5 @@ function scr_ext_prev_line_start(_a) {
         }
         _step++;
     }
-    return (_addr - _step) & $FFFF;
+    return (_addr - _step) & 0xFFFF;
 }
