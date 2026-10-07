@@ -143,16 +143,31 @@ function scr_ext_gfx_setup() {
     gfx_img_w = _cols * _pitch_w;
     gfx_img_h = gfx_rows * _pitch_h;
     gfx_screen_bytes = _cols * gfx_rows * gfx_cell_bytes;
+    gfx_row_bytes = _cols * gfx_cell_bytes;
+    gfx_phase = gfx_phase mod gfx_row_bytes;
 
     sb_gfx.max_value = 65535;
     sb_gfx.page = gfx_screen_bytes;
     gfx_dirty = true;
 }
 
+/// @desc scr_ext_gfx_snap(addr)
+/// Snaps an address to a whole row of cells, keeping the fine offset (gfx_phase).
+/// Every scroll moves the picture vertically only, so cells never slide sideways.
+function scr_ext_gfx_snap(_addr) {
+    var _rows = floor((_addr - gfx_phase) / gfx_row_bytes);
+    return (gfx_phase + _rows * gfx_row_bytes) & 0xFFFF;
+}
+
 /// @desc scr_ext_gfx_follow()
-/// Moves the viewer to the cursor, aligned to the mode's natural boundary.
+/// Keeps the cursor visible in the viewer. Does nothing while the cursor is
+/// already on screen; otherwise scrolls whole rows so the cursor's row is at the top.
 function scr_ext_gfx_follow() {
-    gfx_addr = cursor_addr - (cursor_addr mod gfx_align);
+    var _rel = (cursor_addr - gfx_addr + 65536) mod 65536;
+    if (_rel < gfx_screen_bytes) {
+        return;
+    }
+    gfx_addr = scr_ext_gfx_snap(cursor_addr);
     gfx_dirty = true;
 }
 
@@ -162,11 +177,9 @@ function scr_ext_gfx_do_button(_b, _shift) {
         case "gmode":
             gfx_mode = _b.arg;
             scr_ext_gfx_setup();
+            gfx_addr = scr_ext_gfx_snap(gfx_addr);
             if (gfx_follow) {
                 scr_ext_gfx_follow();
-            }
-            else {
-                gfx_addr = gfx_addr - (gfx_addr mod gfx_align);
             }
             break;
 
@@ -190,6 +203,7 @@ function scr_ext_gfx_do_button(_b, _shift) {
                 }
             }
             scr_ext_gfx_setup();
+            gfx_addr = scr_ext_gfx_snap(gfx_addr);
             break;
 
         case "gfollow":

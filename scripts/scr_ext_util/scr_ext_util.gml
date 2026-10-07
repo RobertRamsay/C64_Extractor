@@ -69,6 +69,10 @@ function scr_ext_do_action(_action, _overlay) {
         case "open":
             var _path = get_open_filename("C64 files|*.prg;*.d64;*.bin;*.raw;*.dump;*.crt;*.tap;*.t64|All files|*.*", "");
             io_clear();
+            // Force a full relayout / redraw after the modal dialog
+            last_win_w = 0;
+            map_dirty = true;
+            gfx_dirty = true;
             if (_path != "") {
                 scr_ext_load_path(_path, _overlay);
             }
@@ -90,11 +94,11 @@ function scr_ext_do_action(_action, _overlay) {
             break;
 
         case "fullscreen":
-            if (window_get_fullscreen()) {
-                window_set_fullscreen(false);
+            if (full_window) {
+                scr_ext_set_full_window(false);
             }
             else {
-                window_set_fullscreen(true);
+                scr_ext_set_full_window(true);
             }
             break;
 
@@ -108,4 +112,25 @@ function scr_ext_do_action(_action, _overlay) {
             map_dirty = true;
             break;
     }
+}
+
+/// @desc scr_ext_set_full_window(on)
+/// on  = borderless window covering the whole display (no exclusive full screen,
+///       so file dialogs can't blank the display)
+/// off = bordered window at 75% of the display, centred
+function scr_ext_set_full_window(_on) {
+    full_window = _on;
+    if (_on) {
+        window_set_showborder(false);
+        window_set_position(0, 0);
+        window_set_size(display_get_width(), display_get_height());
+    }
+    else {
+        window_set_showborder(true);
+        window_set_size(floor(display_get_width() * 0.75), floor(display_get_height() * 0.75));
+        window_center();
+    }
+    last_win_w = 0;
+    map_dirty = true;
+    gfx_dirty = true;
 }

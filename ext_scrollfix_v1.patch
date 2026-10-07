@@ -1,0 +1,177 @@
+diff --git a/objects/obj_ext_main/Create_0.gml b/objects/obj_ext_main/Create_0.gml
+index af16fbf..cf6f190 100644
+--- a/objects/obj_ext_main/Create_0.gml
++++ b/objects/obj_ext_main/Create_0.gml
+@@ -34,6 +34,8 @@ gui_w = 1366;
+ gui_h = 768;
+ last_win_w = 0;
+ last_win_h = 0;
++full_window = true;       // borderless window covering the display
++full_window_delay = 2;    // frames to wait before sizing the window
+ ui_pad = 14;
+ top_h = 40;
+ line_h = 15;
+@@ -96,6 +98,8 @@ gfx_cell_h = 8;
+ gfx_cell_bytes = 8;
+ gfx_gap = 0;
+ gfx_align = 8;
++gfx_row_bytes = 256;      // bytes per row of cells
++gfx_phase = 0;            // gfx_addr mod gfx_row_bytes, only changed by Shift+wheel
+ gfx_row_cols = 32;
+ gfx_rows = 1;
+ gfx_zoom = 1;
+@@ -151,5 +155,4 @@ col_gfx_range = make_colour_rgb(60, 120, 230);
+ 
+ gpu_set_texfilter(false);
+ scr_ext_reset_memory();
+-window_set_fullscreen(true);
+ scr_ext_update_window();
+diff --git a/objects/obj_ext_main/Step_0.gml b/objects/obj_ext_main/Step_0.gml
+index b32dda3..0aba0ce 100644
+--- a/objects/obj_ext_main/Step_0.gml
++++ b/objects/obj_ext_main/Step_0.gml
+@@ -1,5 +1,12 @@
+ /// @desc Input
+ 
++// Size the window a couple of frames after start-up, once it exists
++if (full_window_delay > 0) {
++    full_window_delay -= 1;
++    if (full_window_delay == 0) {
++        scr_ext_set_full_window(full_window);
++    }
++}
+ scr_ext_update_window();
+ 
+ var _mx = device_mouse_x_to_gui(0);
+@@ -45,7 +52,7 @@ if (scr_ext_sb_step(sb_dir, _mx, _my, _lmb_pressed, _lmb_held)) {
+ 
+ sb_gfx.value = gfx_addr;
+ if (scr_ext_sb_step(sb_gfx, _mx, _my, _lmb_pressed, _lmb_held)) {
+-    gfx_addr = sb_gfx.value - (sb_gfx.value mod gfx_align);
++    gfx_addr = scr_ext_gfx_snap(sb_gfx.value);
+     gfx_dirty = true;
+ }
+ 
+@@ -177,6 +184,7 @@ if (point_in_rectangle(_mx, _my, gfx_canvas_x, gfx_canvas_y, gfx_canvas_x + gfx_
+         // Wheel = one row of cells, Shift+wheel = one byte (to find alignment)
+         if (_shift) {
+             gfx_addr = (gfx_addr + _wheel) & 0xFFFF;
++            gfx_phase = gfx_addr mod gfx_row_bytes;
+         }
+         else {
+             gfx_addr = (gfx_addr + _wheel * gfx_row_cols * gfx_cell_bytes) & 0xFFFF;
+diff --git a/scripts/scr_ext_gfx/scr_ext_gfx.gml b/scripts/scr_ext_gfx/scr_ext_gfx.gml
+index f43cf62..fff20e6 100644
+--- a/scripts/scr_ext_gfx/scr_ext_gfx.gml
++++ b/scripts/scr_ext_gfx/scr_ext_gfx.gml
+@@ -143,16 +143,31 @@ function scr_ext_gfx_setup() {
+     gfx_img_w = _cols * _pitch_w;
+     gfx_img_h = gfx_rows * _pitch_h;
+     gfx_screen_bytes = _cols * gfx_rows * gfx_cell_bytes;
++    gfx_row_bytes = _cols * gfx_cell_bytes;
++    gfx_phase = gfx_phase mod gfx_row_bytes;
+ 
+     sb_gfx.max_value = 65535;
+     sb_gfx.page = gfx_screen_bytes;
+     gfx_dirty = true;
+ }
+ 
++/// @desc scr_ext_gfx_snap(addr)
++/// Snaps an address to a whole row of cells, keeping the fine offset (gfx_phase).
++/// Every scroll moves the picture vertically only, so cells never slide sideways.
++function scr_ext_gfx_snap(_addr) {
++    var _rows = floor((_addr - gfx_phase) / gfx_row_bytes);
++    return (gfx_phase + _rows * gfx_row_bytes) & 0xFFFF;
++}
++
+ /// @desc scr_ext_gfx_follow()
+-/// Moves the viewer to the cursor, aligned to the mode's natural boundary.
++/// Keeps the cursor visible in the viewer. Does nothing while the cursor is
++/// already on screen; otherwise scrolls whole rows so the cursor's row is at the top.
+ function scr_ext_gfx_follow() {
+-    gfx_addr = cursor_addr - (cursor_addr mod gfx_align);
++    var _rel = (cursor_addr - gfx_addr + 65536) mod 65536;
++    if (_rel < gfx_screen_bytes) {
++        return;
++    }
++    gfx_addr = scr_ext_gfx_snap(cursor_addr);
+     gfx_dirty = true;
+ }
+ 
+@@ -162,12 +177,10 @@ function scr_ext_gfx_do_button(_b, _shift) {
+         case "gmode":
+             gfx_mode = _b.arg;
+             scr_ext_gfx_setup();
++            gfx_addr = scr_ext_gfx_snap(gfx_addr);
+             if (gfx_follow) {
+                 scr_ext_gfx_follow();
+             }
+-            else {
+-                gfx_addr = gfx_addr - (gfx_addr mod gfx_align);
+-            }
+             break;
+ 
+         case "gcols":
+@@ -190,6 +203,7 @@ function scr_ext_gfx_do_button(_b, _shift) {
+                 }
+             }
+             scr_ext_gfx_setup();
++            gfx_addr = scr_ext_gfx_snap(gfx_addr);
+             break;
+ 
+         case "gfollow":
+diff --git a/scripts/scr_ext_util/scr_ext_util.gml b/scripts/scr_ext_util/scr_ext_util.gml
+index 965256d..6527687 100644
+--- a/scripts/scr_ext_util/scr_ext_util.gml
++++ b/scripts/scr_ext_util/scr_ext_util.gml
+@@ -69,6 +69,10 @@ function scr_ext_do_action(_action, _overlay) {
+         case "open":
+             var _path = get_open_filename("C64 files|*.prg;*.d64;*.bin;*.raw;*.dump;*.crt;*.tap;*.t64|All files|*.*", "");
+             io_clear();
++            // Force a full relayout / redraw after the modal dialog
++            last_win_w = 0;
++            map_dirty = true;
++            gfx_dirty = true;
+             if (_path != "") {
+                 scr_ext_load_path(_path, _overlay);
+             }
+@@ -90,11 +94,11 @@ function scr_ext_do_action(_action, _overlay) {
+             break;
+ 
+         case "fullscreen":
+-            if (window_get_fullscreen()) {
+-                window_set_fullscreen(false);
++            if (full_window) {
++                scr_ext_set_full_window(false);
+             }
+             else {
+-                window_set_fullscreen(true);
++                scr_ext_set_full_window(true);
+             }
+             break;
+ 
+@@ -109,3 +113,24 @@ function scr_ext_do_action(_action, _overlay) {
+             break;
+     }
+ }
++
++/// @desc scr_ext_set_full_window(on)
++/// on  = borderless window covering the whole display (no exclusive full screen,
++///       so file dialogs can't blank the display)
++/// off = bordered window at 75% of the display, centred
++function scr_ext_set_full_window(_on) {
++    full_window = _on;
++    if (_on) {
++        window_set_showborder(false);
++        window_set_position(0, 0);
++        window_set_size(display_get_width(), display_get_height());
++    }
++    else {
++        window_set_showborder(true);
++        window_set_size(floor(display_get_width() * 0.75), floor(display_get_height() * 0.75));
++        window_center();
++    }
++    last_win_w = 0;
++    map_dirty = true;
++    gfx_dirty = true;
++}

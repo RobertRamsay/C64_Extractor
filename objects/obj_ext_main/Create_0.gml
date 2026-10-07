@@ -34,6 +34,8 @@ gui_w = 1366;
 gui_h = 768;
 last_win_w = 0;
 last_win_h = 0;
+full_window = true;       // borderless window covering the display
+full_window_delay = 2;    // frames to wait before sizing the window
 ui_pad = 14;
 top_h = 40;
 line_h = 15;
@@ -96,6 +98,8 @@ gfx_cell_h = 8;
 gfx_cell_bytes = 8;
 gfx_gap = 0;
 gfx_align = 8;
+gfx_row_bytes = 256;      // bytes per row of cells
+gfx_phase = 0;            // gfx_addr mod gfx_row_bytes, only changed by Shift+wheel
 gfx_row_cols = 32;
 gfx_rows = 1;
 gfx_zoom = 1;
@@ -151,5 +155,4 @@ col_gfx_range = make_colour_rgb(60, 120, 230);
 
 gpu_set_texfilter(false);
 scr_ext_reset_memory();
-window_set_fullscreen(true);
 scr_ext_update_window();

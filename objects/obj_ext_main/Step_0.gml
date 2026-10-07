@@ -1,5 +1,12 @@
 /// @desc Input
 
+// Size the window a couple of frames after start-up, once it exists
+if (full_window_delay > 0) {
+    full_window_delay -= 1;
+    if (full_window_delay == 0) {
+        scr_ext_set_full_window(full_window);
+    }
+}
 scr_ext_update_window();
 
 var _mx = device_mouse_x_to_gui(0);
@@ -45,7 +52,7 @@ if (scr_ext_sb_step(sb_dir, _mx, _my, _lmb_pressed, _lmb_held)) {
 
 sb_gfx.value = gfx_addr;
 if (scr_ext_sb_step(sb_gfx, _mx, _my, _lmb_pressed, _lmb_held)) {
-    gfx_addr = sb_gfx.value - (sb_gfx.value mod gfx_align);
+    gfx_addr = scr_ext_gfx_snap(sb_gfx.value);
     gfx_dirty = true;
 }
 
@@ -177,6 +184,7 @@ if (point_in_rectangle(_mx, _my, gfx_canvas_x, gfx_canvas_y, gfx_canvas_x + gfx_
         // Wheel = one row of cells, Shift+wheel = one byte (to find alignment)
         if (_shift) {
             gfx_addr = (gfx_addr + _wheel) & 0xFFFF;
+            gfx_phase = gfx_addr mod gfx_row_bytes;
         }
         else {
             gfx_addr = (gfx_addr + _wheel * gfx_row_cols * gfx_cell_bytes) & 0xFFFF;
