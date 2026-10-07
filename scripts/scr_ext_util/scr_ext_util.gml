@@ -108,6 +108,12 @@ function scr_ext_do_action(_action, _overlay) {
             }
             break;
 
+        case "deselect":
+            sel_active = false;
+            sel_dragging = false;
+            status_text = "Selection cleared.";
+            break;
+
         case "export":
             scr_ext_export_selection();
             break;

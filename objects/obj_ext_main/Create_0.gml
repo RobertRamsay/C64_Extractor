@@ -123,7 +123,12 @@ gfx_screen_bytes = 8;
 gfx_surf = -1;
 gfx_buf = -1;
 gfx_dirty = true;
-gfx_zoom_lock = 0;          // > 0 after the width handle is dragged
+gfx_zoom_lock = 0;
+gfx_use_colour = false;     // bitmap modes: colours from screen RAM / colour data
+gfx_scr_addr = -1;          // screen RAM (pairs 01/10, or HR ink/paper), -1 = none
+gfx_col_addr = -1;          // colour RAM data (MC pair 11), -1 = none
+gfx_colour_text_x = 0;
+gfx_colour_text_y = 0;          // > 0 after the width handle is dragged
 gfx_width_drag = false;
 gfx_handle_hover = false;
 
@@ -160,7 +165,8 @@ buttons = [
     { bx : 554, by : 8, bw : 120, bh : 24, label : "Shade map [V]",    action : "shade" },
     { bx : 680, by : 8, bw : 130, bh : 24, label : "Fullscreen [F11]", action : "fullscreen" },
     { bx : 816, by : 8, bw : 140, bh : 24, label : "Export sel [X]",   action : "export" },
-    { bx : 962, by : 8, bw : 110, bh : 24, label : "Unpack [U]",       action : "unpack" }
+    { bx : 962, by : 8, bw : 110, bh : 24, label : "Unpack [U]",       action : "unpack" },
+    { bx : 1078, by : 8, bw : 150, bh : 24, label : "Deselect [Ctrl+D]", action : "deselect" }
 ];
 
 // ---- Colours ----

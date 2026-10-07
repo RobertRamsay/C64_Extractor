@@ -20,7 +20,7 @@ for (var _i = 0; _i < array_length(buttons); _i++) {
     scr_ext_draw_button(buttons[_i], false);
 }
 draw_set_colour(col_dim);
-draw_text(1086, 12, "J: next VIC clue   Shift+drag: select   W: region   B/E: sel begin/end   Esc: clear   1-6: modes   F: follow   G: grid");
+draw_text(1240, 12, "J clue  W region  B/E sel  1-6 modes  L align  K colours  Ctrl/Shift+wheel: cell/byte");
 
 // ---- Memory map ----
 var _map_size = 256 * map_scale;

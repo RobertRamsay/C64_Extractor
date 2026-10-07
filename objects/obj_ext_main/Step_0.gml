@@ -210,6 +210,15 @@ for (var _k = 0; _k < EXT_GFX_MODE_COUNT; _k++) {
 if (keyboard_check_pressed(ord("X"))) {
     scr_ext_do_action("export", false);
 }
+if (keyboard_check(vk_control) && keyboard_check_pressed(ord("D"))) {
+    scr_ext_do_action("deselect", false);
+}
+if (keyboard_check_pressed(ord("L"))) {
+    scr_ext_gfx_do_button({ action : "galign", arg : 0 }, false);
+}
+if (keyboard_check_pressed(ord("K"))) {
+    scr_ext_gfx_do_button({ action : "gcolour", arg : 0 }, false);
+}
 if (keyboard_check_pressed(ord("U"))) {
     scr_ext_do_action("unpack", false);
 }
@@ -289,9 +298,13 @@ if (!gfx_width_drag && point_in_rectangle(_mx, _my, gfx_canvas_x, gfx_canvas_y, 
         }
     }
     if (_wheel != 0) {
-        // Wheel = one row of cells, Shift+wheel = one byte (to find alignment)
+        // Wheel = one row of cells, Ctrl+wheel = one cell, Shift+wheel = one byte
         if (_shift) {
             gfx_addr = (gfx_addr + _wheel) & 0xFFFF;
+            gfx_phase = gfx_addr mod gfx_row_bytes;
+        }
+        else if (keyboard_check(vk_control)) {
+            gfx_addr = (gfx_addr + _wheel * gfx_cell_bytes) & 0xFFFF;
             gfx_phase = gfx_addr mod gfx_row_bytes;
         }
         else {

@@ -83,10 +83,23 @@ function scr_ext_gfx_build_buttons() {
     gfx_swatch_x = _bx;
     gfx_swatch_y = _by;
 
+    // Row 3: bitmap colours (screen RAM / colour data) and alignment
+    _bx = gfx_x;
+    _by = gfx_y + 56;
+    var _labels3  = ["Colours [K]", "Koala", "Scr = cursor", "Col = cursor", "Align [L]"];
+    var _actions3 = ["gcolour",     "gkoala", "gscr",        "gcol",         "galign"];
+    for (var _i = 0; _i < array_length(_labels3); _i++) {
+        var _w3 = string_width(_labels3[_i]) + 18;
+        array_push(gfx_buttons, { bx : _bx, by : _by, bw : _w3, bh : 22, label : _labels3[_i], action : _actions3[_i], arg : 0 });
+        _bx += _w3 + 4;
+    }
+    gfx_colour_text_x = _bx + 8;
+    gfx_colour_text_y = _by + 4;
+
     gfx_canvas_x = gfx_x;
-    gfx_canvas_y = gfx_y + 56;
+    gfx_canvas_y = gfx_y + 84;
     gfx_canvas_w = gfx_w - EXT_SB_W - 8;
-    gfx_canvas_h = gfx_h - 56;
+    gfx_canvas_h = gfx_h - 84;
     if (gfx_canvas_h < 32) {
         gfx_canvas_h = 32;
     }
@@ -231,6 +244,44 @@ function scr_ext_gfx_do_button(_b, _shift) {
             scr_ext_sel_set(gfx_addr, _end);
             break;
 
+        case "gcolour":
+            if (gfx_use_colour) {
+                gfx_use_colour = false;
+            }
+            else {
+                gfx_use_colour = true;
+            }
+            gfx_dirty = true;
+            break;
+
+        case "gkoala":
+            // Koala Painter layout: bitmap, +8000 screen RAM, +9000 colour RAM, +10000 background
+            gfx_scr_addr = (gfx_addr + 8000) & 0xFFFF;
+            gfx_col_addr = (gfx_addr + 9000) & 0xFFFF;
+            gfx_col[0] = buffer_peek(mem_buf, (gfx_addr + 10000) & 0xFFFF, buffer_u8) & 15;
+            gfx_use_colour = true;
+            gfx_dirty = true;
+            status_text = "Koala layout: screen $" + scr_ext_hex(gfx_scr_addr, 4) + ", colour $" + scr_ext_hex(gfx_col_addr, 4) + ", background " + string(gfx_col[0]);
+            break;
+
+        case "gscr":
+            gfx_scr_addr = cursor_addr;
+            gfx_use_colour = true;
+            gfx_dirty = true;
+            status_text = "Screen RAM (colour pairs 01/10) taken from $" + scr_ext_hex(gfx_scr_addr, 4);
+            break;
+
+        case "gcol":
+            gfx_col_addr = cursor_addr;
+            gfx_use_colour = true;
+            gfx_dirty = true;
+            status_text = "Colour RAM data (pair 11) taken from $" + scr_ext_hex(gfx_col_addr, 4);
+            break;
+
+        case "galign":
+            scr_ext_gfx_auto_align();
+            break;
+
         case "ggrid":
             if (gfx_grid) {
                 gfx_grid = false;
@@ -296,10 +347,41 @@ function scr_ext_gfx_render() {
     var _cells = gfx_row_cols * gfx_rows;
     var _img_w = gfx_img_w;
 
+    // Bitmap colours: screen RAM gives pairs 01/10 (MC) or ink/paper (HR),
+    // colour RAM data gives pair 11 (MC)
+    var _colour_on = false;
+    if (scr_ext_gfx_is_bitmap() && gfx_use_colour) {
+        _colour_on = true;
+    }
+    var _cell_pal = [_pal4[0], _pal4[1], _pal4[2], _pal4[3]];
+
     for (var _cell = 0; _cell < _cells; _cell++) {
         var _ox = (_cell mod gfx_row_cols) * _pitch_w;
         var _oy = (_cell div gfx_row_cols) * _pitch_h;
         var _cell_base = gfx_addr + _cell * gfx_cell_bytes;
+
+        var _cp = _pal4;
+        if (_colour_on) {
+            _cell_pal[0] = _pal4[0];
+            _cell_pal[1] = _pal4[1];
+            _cell_pal[2] = _pal4[2];
+            _cell_pal[3] = _pal4[3];
+            if (gfx_scr_addr >= 0) {
+                var _sv = buffer_peek(mem_buf, (gfx_scr_addr + _cell) & 0xFFFF, buffer_u8);
+                if (_mc) {
+                    _cell_pal[1] = c64_pal_u32[_sv >> 4];
+                    _cell_pal[2] = c64_pal_u32[_sv & 15];
+                }
+                else {
+                    _cell_pal[3] = c64_pal_u32[_sv >> 4];
+                    _cell_pal[0] = c64_pal_u32[_sv & 15];
+                }
+            }
+            if (_mc && gfx_col_addr >= 0) {
+                _cell_pal[3] = c64_pal_u32[buffer_peek(mem_buf, (gfx_col_addr + _cell) & 0xFFFF, buffer_u8) & 15];
+            }
+            _cp = _cell_pal;
+        }
 
         for (var _row = 0; _row < gfx_cell_h; _row++) {
             for (var _bc = 0; _bc < _bytes_per_row; _bc++) {
@@ -319,7 +401,7 @@ function scr_ext_gfx_render() {
                     var _v = buffer_peek(mem_buf, _a, buffer_u8);
                     if (_mc) {
                         for (var _pair = 0; _pair < 4; _pair++) {
-                            var _col = _pal4[(_v >> (6 - _pair * 2)) & 3];
+                            var _col = _cp[(_v >> (6 - _pair * 2)) & 3];
                             buffer_poke(gfx_buf, _off + _pair * 8, buffer_u32, _col);
                             buffer_poke(gfx_buf, _off + _pair * 8 + 4, buffer_u32, _col);
                         }
@@ -327,10 +409,10 @@ function scr_ext_gfx_render() {
                     else {
                         for (var _bit = 0; _bit < 8; _bit++) {
                             if (((_v >> (7 - _bit)) & 1) == 1) {
-                                buffer_poke(gfx_buf, _off + _bit * 4, buffer_u32, _fg);
+                                buffer_poke(gfx_buf, _off + _bit * 4, buffer_u32, _cp[3]);
                             }
                             else {
-                                buffer_poke(gfx_buf, _off + _bit * 4, buffer_u32, _bg);
+                                buffer_poke(gfx_buf, _off + _bit * 4, buffer_u32, _cp[0]);
                             }
                         }
                     }
@@ -407,6 +489,29 @@ function scr_ext_gfx_draw() {
         draw_text(_sx + 3, gfx_swatch_y + 4, _sw_names[_s]);
     }
 
+    var _ctext = "Colours OFF";
+    if (gfx_use_colour) {
+        _ctext = "SCR ";
+        if (gfx_scr_addr >= 0) {
+            _ctext += "$" + scr_ext_hex(gfx_scr_addr, 4);
+        }
+        else {
+            _ctext += "-";
+        }
+        _ctext += "   COL ";
+        if (gfx_col_addr >= 0) {
+            _ctext += "$" + scr_ext_hex(gfx_col_addr, 4);
+        }
+        else {
+            _ctext += "-";
+        }
+        if (!scr_ext_gfx_is_bitmap()) {
+            _ctext += "   (bitmap modes only)";
+        }
+    }
+    draw_set_colour(col_dim);
+    draw_text(gfx_colour_text_x, gfx_colour_text_y, _ctext);
+
     if (gfx_dirty || !surface_exists(gfx_surf)) {
         scr_ext_gfx_render();
     }
@@ -476,4 +581,86 @@ function scr_ext_gfx_draw() {
 
     sb_gfx.value = gfx_addr;
     scr_ext_sb_draw(sb_gfx);
+}
+
+/// @desc scr_ext_gfx_align_score(base, mc)
+/// Lower = more natural picture. Counts pixel changes between vertically
+/// neighbouring image rows, plus across each cell's left/right edge.
+/// A wrong start offset leaves a seam where the row wraps, and a wrong byte
+/// offset scrambles rows inside the cells - both push the score up.
+function scr_ext_gfx_align_score(_base, _mc) {
+    var _pc = global.ext_popcount;
+    var _s = 0;
+    var _ink = 0;
+    for (var _y = 0; _y < 200; _y++) {
+        var _r0 = _base + (_y div 8) * 320 + (_y mod 8);
+        var _r1 = _base + ((_y + 1) div 8) * 320 + ((_y + 1) mod 8);
+        var _prev = -1;
+        for (var _cx = 0; _cx < 40; _cx++) {
+            var _b0 = buffer_peek(mem_buf, (_r0 + _cx * 8) & 0xFFFF, buffer_u8);
+            if (_b0 != 0) {
+                _ink += 1;
+            }
+            if (_y < 199) {
+                _s += _pc[_b0 ^ buffer_peek(mem_buf, (_r1 + _cx * 8) & 0xFFFF, buffer_u8)];
+            }
+            if (_prev >= 0) {
+                if (_mc) {
+                    if ((_prev & 3) != (_b0 >> 6)) {
+                        _s += 2;
+                    }
+                }
+                else {
+                    if ((_prev & 1) != (_b0 >> 7)) {
+                        _s += 1;
+                    }
+                }
+            }
+            _prev = _b0;
+        }
+    }
+    if (_ink < 800) {
+        return -1;      // mostly empty: not a candidate
+    }
+    return _s / _ink;
+}
+
+/// @desc scr_ext_gfx_auto_align()
+/// Searches +/- one character row around the bitmap start, first in whole
+/// cells then in single bytes, for the offset where the picture is smoothest.
+function scr_ext_gfx_auto_align() {
+    if (!scr_ext_gfx_is_bitmap()) {
+        status_text = "Align works in the bitmap modes.";
+        return;
+    }
+    var _mc = scr_ext_gfx_is_mc();
+    var _best = gfx_addr;
+    var _best_s = -1;
+    for (var _o = -320; _o <= 320; _o += 8) {
+        var _s = scr_ext_gfx_align_score((gfx_addr + _o) & 0xFFFF, _mc);
+        if (_s >= 0) {
+            if (_best_s < 0 || _s < _best_s) {
+                _best_s = _s;
+                _best = (gfx_addr + _o) & 0xFFFF;
+            }
+        }
+    }
+    var _coarse = _best;
+    for (var _f = -7; _f <= 7; _f++) {
+        var _sf = scr_ext_gfx_align_score((_coarse + _f) & 0xFFFF, _mc);
+        if (_sf >= 0) {
+            if (_best_s < 0 || _sf < _best_s) {
+                _best_s = _sf;
+                _best = (_coarse + _f) & 0xFFFF;
+            }
+        }
+    }
+    if (_best_s < 0) {
+        status_text = "Align: not enough picture data around $" + scr_ext_hex(gfx_addr, 4) + ".";
+        return;
+    }
+    gfx_addr = _best;
+    gfx_phase = gfx_addr mod gfx_row_bytes;
+    gfx_dirty = true;
+    status_text = "Bitmap aligned to $" + scr_ext_hex(gfx_addr, 4) + " (8000 bytes, ends $" + scr_ext_hex(gfx_addr + 7999, 4) + "). Screen RAM / colour data usually follow it - try Koala.";
 }

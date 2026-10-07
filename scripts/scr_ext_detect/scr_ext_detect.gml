@@ -176,7 +176,7 @@ function scr_ext_add_clue(_addr, _len, _kind, _mode, _why) {
             return false;
         }
     }
-    array_push(vic_clues, { addr : _a, len : _len, kind : _kind, mode : _mode, why : _why });
+    array_push(vic_clues, { addr : _a, len : _len, kind : _kind, mode : _mode, why : _why, scr : -1 });
     return true;
 }
 
@@ -237,6 +237,8 @@ function scr_ext_apply_vic_clues(_writes) {
                     }
                     if (scr_ext_add_clue(_bm, 8000, "Bitmap", _bmode, _why)) {
                         scr_ext_mark_unknown(_bm, 8000, EXT_CLS_GFX);
+                        // Same $D018 write gives the screen RAM holding its colours
+                        vic_clues[array_length(vic_clues) - 1].scr = (_base + ((_w.value >> 4) & 15) * 0x400) & 0xFFFF;
                     }
                 }
 
@@ -294,6 +296,10 @@ function scr_ext_jump_clue() {
     }
     gfx_addr = _c.addr;
     gfx_phase = gfx_addr mod gfx_row_bytes;
+    if (_c.kind == "Bitmap" && _c.scr >= 0) {
+        gfx_scr_addr = _c.scr;
+        gfx_use_colour = true;
+    }
     gfx_dirty = true;
     cursor_addr = _c.addr;
     scr_ext_views_to(_c.addr);
