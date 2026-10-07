@@ -113,6 +113,62 @@ if (_lmb_pressed) {
     }
 }
 
+// ---- Viewer width handle: drag the right edge of the image to change cells per row ----
+gfx_handle_hover = false;
+if (!scr_ext_gfx_is_bitmap()) {
+    var _img_right = gfx_canvas_x + gfx_img_w * gfx_zoom;
+    if (point_in_rectangle(_mx, _my, _img_right - 3, gfx_canvas_y, _img_right + 8, gfx_canvas_y + gfx_img_h * gfx_zoom)) {
+        gfx_handle_hover = true;
+    }
+}
+if (_lmb_pressed && gfx_handle_hover && !_shift) {
+    gfx_width_drag = true;
+    gfx_zoom_lock = gfx_zoom;
+    _lmb_pressed = false;
+}
+if (gfx_width_drag) {
+    if (_lmb_held) {
+        var _pitch = (gfx_cell_w + gfx_gap) * gfx_zoom_lock;
+        var _max_c = floor(gfx_canvas_w / _pitch);
+        var _nc = round((_mx - gfx_canvas_x) / _pitch);
+        if (_nc > _max_c) {
+            _nc = _max_c;
+        }
+        if (_nc < 1) {
+            _nc = 1;
+        }
+        if (scr_ext_gfx_is_sprite()) {
+            if (_nc > 32) {
+                _nc = 32;
+            }
+            if (_nc != gfx_spr_cols) {
+                gfx_spr_cols = _nc;
+                scr_ext_gfx_setup();
+                gfx_phase = gfx_addr mod gfx_row_bytes;
+            }
+        }
+        else {
+            if (_nc > 128) {
+                _nc = 128;
+            }
+            if (_nc != gfx_char_cols) {
+                gfx_char_cols = _nc;
+                scr_ext_gfx_setup();
+                gfx_phase = gfx_addr mod gfx_row_bytes;
+            }
+        }
+    }
+    else {
+        gfx_width_drag = false;
+    }
+}
+if (gfx_handle_hover || gfx_width_drag) {
+    window_set_cursor(cr_size_we);
+}
+else {
+    window_set_cursor(cr_default);
+}
+
 // ---- Hotkeys ----
 if (keyboard_check_pressed(ord("O"))) {
     scr_ext_do_action("open", _shift);
@@ -206,7 +262,7 @@ if (point_in_rectangle(_mx, _my, map_x, map_y, map_x + _map_size - 1, map_y + _m
 }
 
 // ---- Graphics viewer canvas ----
-if (point_in_rectangle(_mx, _my, gfx_canvas_x, gfx_canvas_y, gfx_canvas_x + gfx_canvas_w, gfx_canvas_y + gfx_canvas_h)) {
+if (!gfx_width_drag && point_in_rectangle(_mx, _my, gfx_canvas_x, gfx_canvas_y, gfx_canvas_x + gfx_canvas_w, gfx_canvas_y + gfx_canvas_h)) {
     var _ga = scr_ext_gfx_addr_at(_mx, _my);
     if (_ga >= 0) {
         hover_addr = _ga;

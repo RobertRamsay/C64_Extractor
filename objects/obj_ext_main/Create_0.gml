@@ -109,6 +109,9 @@ gfx_screen_bytes = 8;
 gfx_surf = -1;
 gfx_buf = -1;
 gfx_dirty = true;
+gfx_zoom_lock = 0;          // > 0 after the width handle is dragged
+gfx_width_drag = false;
+gfx_handle_hover = false;
 
 c64_pal = scr_ext_c64_palette();
 c64_pal_u32 = array_create(16, 0);

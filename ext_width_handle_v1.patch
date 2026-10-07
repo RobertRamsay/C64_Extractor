@@ -1,0 +1,195 @@
+diff --git a/objects/obj_ext_main/Create_0.gml b/objects/obj_ext_main/Create_0.gml
+index 8066c53..22bb953 100644
+--- a/objects/obj_ext_main/Create_0.gml
++++ b/objects/obj_ext_main/Create_0.gml
+@@ -109,6 +109,9 @@ gfx_screen_bytes = 8;
+ gfx_surf = -1;
+ gfx_buf = -1;
+ gfx_dirty = true;
++gfx_zoom_lock = 0;          // > 0 after the width handle is dragged
++gfx_width_drag = false;
++gfx_handle_hover = false;
+ 
+ c64_pal = scr_ext_c64_palette();
+ c64_pal_u32 = array_create(16, 0);
+diff --git a/objects/obj_ext_main/Step_0.gml b/objects/obj_ext_main/Step_0.gml
+index d609ef7..14885a9 100644
+--- a/objects/obj_ext_main/Step_0.gml
++++ b/objects/obj_ext_main/Step_0.gml
+@@ -113,6 +113,62 @@ if (_lmb_pressed) {
+     }
+ }
+ 
++// ---- Viewer width handle: drag the right edge of the image to change cells per row ----
++gfx_handle_hover = false;
++if (!scr_ext_gfx_is_bitmap()) {
++    var _img_right = gfx_canvas_x + gfx_img_w * gfx_zoom;
++    if (point_in_rectangle(_mx, _my, _img_right - 3, gfx_canvas_y, _img_right + 8, gfx_canvas_y + gfx_img_h * gfx_zoom)) {
++        gfx_handle_hover = true;
++    }
++}
++if (_lmb_pressed && gfx_handle_hover && !_shift) {
++    gfx_width_drag = true;
++    gfx_zoom_lock = gfx_zoom;
++    _lmb_pressed = false;
++}
++if (gfx_width_drag) {
++    if (_lmb_held) {
++        var _pitch = (gfx_cell_w + gfx_gap) * gfx_zoom_lock;
++        var _max_c = floor(gfx_canvas_w / _pitch);
++        var _nc = round((_mx - gfx_canvas_x) / _pitch);
++        if (_nc > _max_c) {
++            _nc = _max_c;
++        }
++        if (_nc < 1) {
++            _nc = 1;
++        }
++        if (scr_ext_gfx_is_sprite()) {
++            if (_nc > 32) {
++                _nc = 32;
++            }
++            if (_nc != gfx_spr_cols) {
++                gfx_spr_cols = _nc;
++                scr_ext_gfx_setup();
++                gfx_phase = gfx_addr mod gfx_row_bytes;
++            }
++        }
++        else {
++            if (_nc > 128) {
++                _nc = 128;
++            }
++            if (_nc != gfx_char_cols) {
++                gfx_char_cols = _nc;
++                scr_ext_gfx_setup();
++                gfx_phase = gfx_addr mod gfx_row_bytes;
++            }
++        }
++    }
++    else {
++        gfx_width_drag = false;
++    }
++}
++if (gfx_handle_hover || gfx_width_drag) {
++    window_set_cursor(cr_size_we);
++}
++else {
++    window_set_cursor(cr_default);
++}
++
+ // ---- Hotkeys ----
+ if (keyboard_check_pressed(ord("O"))) {
+     scr_ext_do_action("open", _shift);
+@@ -206,7 +262,7 @@ if (point_in_rectangle(_mx, _my, map_x, map_y, map_x + _map_size - 1, map_y + _m
+ }
+ 
+ // ---- Graphics viewer canvas ----
+-if (point_in_rectangle(_mx, _my, gfx_canvas_x, gfx_canvas_y, gfx_canvas_x + gfx_canvas_w, gfx_canvas_y + gfx_canvas_h)) {
++if (!gfx_width_drag && point_in_rectangle(_mx, _my, gfx_canvas_x, gfx_canvas_y, gfx_canvas_x + gfx_canvas_w, gfx_canvas_y + gfx_canvas_h)) {
+     var _ga = scr_ext_gfx_addr_at(_mx, _my);
+     if (_ga >= 0) {
+         hover_addr = _ga;
+diff --git a/scripts/scr_ext_gfx/scr_ext_gfx.gml b/scripts/scr_ext_gfx/scr_ext_gfx.gml
+index 3aeaa41..9004ea2 100644
+--- a/scripts/scr_ext_gfx/scr_ext_gfx.gml
++++ b/scripts/scr_ext_gfx/scr_ext_gfx.gml
+@@ -68,16 +68,16 @@ function scr_ext_gfx_build_buttons() {
+ 
+     _bx = gfx_x;
+     _by = gfx_y + 28;
+-    array_push(gfx_buttons, { bx : _bx, by : _by, bw : 60, bh : 22, label : "Cols -", action : "gcols", arg : -1 });
+-    _bx += 64;
+-    array_push(gfx_buttons, { bx : _bx, by : _by, bw : 60, bh : 22, label : "Cols +", action : "gcols", arg : 1 });
+-    _bx += 64;
+-    array_push(gfx_buttons, { bx : _bx, by : _by, bw : 80, bh : 22, label : "Follow [F]", action : "gfollow", arg : 0 });
+-    _bx += 84;
+-    array_push(gfx_buttons, { bx : _bx, by : _by, bw : 70, bh : 22, label : "Grid [G]", action : "ggrid", arg : 0 });
+-    _bx += 74;
+-    array_push(gfx_buttons, { bx : _bx, by : _by, bw : 84, bh : 22, label : "Select view", action : "gselview", arg : 0 });
+-    _bx += 98;
++    var _labels  = ["Cols -", "Cols +", "Follow [F]", "Grid [G]", "Select view"];
++    var _actions = ["gcols",  "gcols",  "gfollow",    "ggrid",    "gselview"];
++    var _args    = [-1,       1,        0,            0,          0];
++    draw_set_font(-1);
++    for (var _i = 0; _i < array_length(_labels); _i++) {
++        var _w = string_width(_labels[_i]) + 18;
++        array_push(gfx_buttons, { bx : _bx, by : _by, bw : _w, bh : 22, label : _labels[_i], action : _actions[_i], arg : _args[_i] });
++        _bx += _w + 4;
++    }
++    _bx += 10;
+ 
+     // Colour swatches: BG, MC1, MC2, FG
+     gfx_swatch_x = _bx;
+@@ -131,6 +131,12 @@ function scr_ext_gfx_setup() {
+     if (gfx_zoom < 1) {
+         gfx_zoom = 1;
+     }
++    // After the width handle has been dragged, keep that zoom (unless it no longer fits)
++    if (gfx_zoom_lock > 0) {
++        if (gfx_zoom_lock <= gfx_zoom) {
++            gfx_zoom = gfx_zoom_lock;
++        }
++    }
+ 
+     if (scr_ext_gfx_is_bitmap()) {
+         gfx_rows = 25;
+@@ -178,6 +184,7 @@ function scr_ext_gfx_do_button(_b, _shift) {
+     switch (_b.action) {
+         case "gmode":
+             gfx_mode = _b.arg;
++            gfx_zoom_lock = 0;
+             scr_ext_gfx_setup();
+             // Stay exactly where we are in memory; future scrolling keeps this offset
+             gfx_phase = gfx_addr mod gfx_row_bytes;
+@@ -189,8 +196,8 @@ function scr_ext_gfx_do_button(_b, _shift) {
+                 if (gfx_spr_cols < 1) {
+                     gfx_spr_cols = 1;
+                 }
+-                if (gfx_spr_cols > 16) {
+-                    gfx_spr_cols = 16;
++                if (gfx_spr_cols > 32) {
++                    gfx_spr_cols = 32;
+                 }
+             }
+             else if (!scr_ext_gfx_is_bitmap()) {
+@@ -198,8 +205,8 @@ function scr_ext_gfx_do_button(_b, _shift) {
+                 if (gfx_char_cols < 1) {
+                     gfx_char_cols = 1;
+                 }
+-                if (gfx_char_cols > 64) {
+-                    gfx_char_cols = 64;
++                if (gfx_char_cols > 128) {
++                    gfx_char_cols = 128;
+                 }
+             }
+             scr_ext_gfx_setup();
+@@ -367,7 +374,7 @@ function scr_ext_gfx_addr_at(_mx, _my) {
+ /// @desc scr_ext_gfx_draw()
+ /// Draws the viewer: toolbar, swatches, canvas, grid, cursor cell and scroll bar.
+ function scr_ext_gfx_draw() {
+-    var _title = "GRAPHICS  " + scr_ext_gfx_mode_name(gfx_mode) + "   $" + scr_ext_hex(gfx_addr, 4) + "-$" + scr_ext_hex(gfx_addr + gfx_screen_bytes - 1, 4) + "   zoom x" + string(gfx_zoom);
++    var _title = "GRAPHICS  " + scr_ext_gfx_mode_name(gfx_mode) + "   $" + scr_ext_hex(gfx_addr, 4) + "-$" + scr_ext_hex(gfx_addr + gfx_screen_bytes - 1, 4) + "   " + string(gfx_row_cols) + " cols   zoom x" + string(gfx_zoom);
+     scr_ext_panel(gfx_x, gfx_y, gfx_w, gfx_h, _title);
+ 
+     for (var _i = 0; _i < array_length(gfx_buttons); _i++) {
+@@ -425,6 +432,21 @@ function scr_ext_gfx_draw() {
+         draw_set_alpha(1);
+     }
+ 
++    // Width handle on the right edge of the image (not in bitmap modes)
++    if (!scr_ext_gfx_is_bitmap()) {
++        var _hx = gfx_canvas_x + _iw;
++        if (gfx_handle_hover || gfx_width_drag) {
++            draw_set_colour(col_gfx_range);
++        }
++        else {
++            draw_set_colour(col_border);
++        }
++        draw_rectangle(_hx + 1, gfx_canvas_y, _hx + 5, gfx_canvas_y + _ih, false);
++        var _mid = gfx_canvas_y + _ih / 2;
++        draw_set_colour(col_text);
++        draw_line(_hx + 3, _mid - 8, _hx + 3, _mid + 8);
++    }
++
+     // Selection overlay on the cells it touches
+     if (sel_active) {
+         draw_set_alpha(0.35);
