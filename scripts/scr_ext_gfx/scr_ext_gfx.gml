@@ -177,10 +177,8 @@ function scr_ext_gfx_do_button(_b, _shift) {
         case "gmode":
             gfx_mode = _b.arg;
             scr_ext_gfx_setup();
-            gfx_addr = scr_ext_gfx_snap(gfx_addr);
-            if (gfx_follow) {
-                scr_ext_gfx_follow();
-            }
+            // Stay exactly where we are in memory; future scrolling keeps this offset
+            gfx_phase = gfx_addr mod gfx_row_bytes;
             break;
 
         case "gcols":
@@ -203,7 +201,7 @@ function scr_ext_gfx_do_button(_b, _shift) {
                 }
             }
             scr_ext_gfx_setup();
-            gfx_addr = scr_ext_gfx_snap(gfx_addr);
+            gfx_phase = gfx_addr mod gfx_row_bytes;
             break;
 
         case "gfollow":
