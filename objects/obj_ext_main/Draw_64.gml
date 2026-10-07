@@ -196,17 +196,26 @@ scr_ext_sb_draw(sb_dir);
 // ---- Info panel ----
 scr_ext_panel(info_x, info_y, info_w, info_h, "INFO");
 
-var _legend_w = 200;
+var _legend_w = 230;
+var _tw = info_w - _legend_w - 24;     // text column width; long lines wrap inside it
 var _iy = info_y;
+
 draw_set_colour(col_text);
-draw_text(info_x, _iy, status_text);
-_iy += line_h;
+draw_text_ext(info_x, _iy, status_text, line_h, _tw);
+_iy += string_height_ext(status_text, line_h, _tw);
+
+if (verdict_text != "") {
+    draw_set_colour(scr_ext_cls_colour(EXT_CLS_LIKELY));
+    draw_text_ext(info_x, _iy, verdict_text, line_h, _tw);
+    _iy += string_height_ext(verdict_text, line_h, _tw);
+}
 
 draw_set_colour(col_dim);
 if (file_name != "") {
-    draw_text(info_x, _iy, file_name + "   [" + file_kind + "]");
+    var _file_text = file_name + "   [" + file_kind + "]";
+    draw_text_ext(info_x, _iy, _file_text, line_h, _tw);
+    _iy += string_height_ext(_file_text, line_h, _tw);
 }
-_iy += line_h;
 
 var _seg_text = "Loaded:";
 var _seg_n = array_length(segments);
@@ -217,8 +226,8 @@ for (var _s = 0; _s < _seg_n && _s < 3; _s++) {
 if (_seg_n > 3) {
     _seg_text += "  (+" + string(_seg_n - 3) + " more)";
 }
-draw_text(info_x, _iy, _seg_text);
-_iy += line_h;
+draw_text_ext(info_x, _iy, _seg_text, line_h, _tw);
+_iy += string_height_ext(_seg_text, line_h, _tw);
 
 var _ent_text = "Entries:";
 var _ent_n = array_length(entries);
@@ -232,17 +241,15 @@ if (_ent_n > 3) {
 if (_ent_n == 0) {
     _ent_text += "  none - put the cursor on code and press C";
 }
-draw_text(info_x, _iy, _ent_text);
-if (verdict_text != "") {
-    draw_set_colour(scr_ext_cls_colour(EXT_CLS_LIKELY));
-    draw_text(info_x, _iy, verdict_text);
-}
-_iy += line_h;
+draw_text_ext(info_x, _iy, _ent_text, line_h, _tw);
+_iy += string_height_ext(_ent_text, line_h, _tw);
+
 if (sel_active) {
+    var _sel_text = "Selection $" + scr_ext_hex(sel_start, 4) + "-$" + scr_ext_hex(sel_end, 4) + "  (" + string(sel_end - sel_start + 1) + " bytes)   X = export";
     draw_set_colour(col_text);
-    draw_text(info_x, _iy, "Selection $" + scr_ext_hex(sel_start, 4) + "-$" + scr_ext_hex(sel_end, 4) + "  (" + string(sel_end - sel_start + 1) + " bytes)   X = export");
+    draw_text_ext(info_x, _iy, _sel_text, line_h, _tw);
+    _iy += string_height_ext(_sel_text, line_h, _tw);
 }
-_iy += line_h;
 
 draw_set_colour(col_text);
 draw_text(info_x, _iy, "Cursor $" + scr_ext_hex(cursor_addr, 4) + "  value $" + scr_ext_hex(buffer_peek(mem_buf, cursor_addr, buffer_u8), 2) + "  " + scr_ext_cls_name(buffer_peek(cls_buf, cursor_addr, buffer_u8)));
@@ -260,7 +267,7 @@ for (var _c2 = 0; _c2 < EXT_CLS_COUNT; _c2++) {
     draw_rectangle(_lx, _row_y + 3, _lx + 9, _row_y + 12, false);
     draw_set_colour(col_dim);
     draw_text(_lx + 16, _row_y, scr_ext_cls_name(_c2));
-    draw_text(_lx + 130, _row_y, string(cls_counts[_c2]));
+    draw_text(_lx + 160, _row_y, string(cls_counts[_c2]));
 }
 
 draw_set_colour(c_white);

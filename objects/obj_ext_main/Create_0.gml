@@ -43,7 +43,7 @@ full_window_delay = 2;    // frames to wait before sizing the window
 ui_pad = 14;
 top_h = 40;
 line_h = 15;
-info_h = 165;
+info_h = 180;
 
 // ---- Panel rectangles (filled in by scr_ext_layout) ----
 map_x = 0;
