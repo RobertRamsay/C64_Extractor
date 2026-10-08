@@ -20,7 +20,9 @@ for (var _i = 0; _i < array_length(buttons); _i++) {
     scr_ext_draw_button(buttons[_i], false);
 }
 draw_set_colour(col_dim);
-draw_text(1240, 12, "J clue  W region  B/E sel  1-6 modes  L align  K colours  Ctrl/Shift+wheel: cell/byte");
+if (toolbar_help_x < gui_w - 200) {
+    draw_text(toolbar_help_x, 12, "J clue  W region  B/E sel  1-6 modes  L align  K/M colours  arrows/Shift: nudge");
+}
 
 // ---- Memory map ----
 var _map_size = 256 * map_scale;
@@ -136,14 +138,14 @@ for (var _r = 0; _r < dis_rows; _r++) {
     }
     draw_set_colour(col_dim);
     draw_text(dis_x + 12, _dy, scr_ext_hex(_da, 4));
-    draw_text(dis_x + 60, _dy, _line.bytes);
+    draw_text(dis_x + 64, _dy, _line.bytes);
     if (_line.cls == EXT_CLS_NONE) {
         draw_set_colour(col_dim);
     }
     else {
         draw_set_colour(scr_ext_cls_colour(_line.cls));
     }
-    draw_text(dis_x + 150, _dy, _line.text);
+    draw_text(dis_x + dis_text_off, _dy, _line.text);
     _da = (_da + _line.size) & 0xFFFF;
 }
 sb_dis.value = dis_top;

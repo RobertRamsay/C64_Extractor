@@ -54,6 +54,8 @@ ui_pad = 14;
 top_h = 40;
 line_h = 15;
 info_h = 180;
+toolbar_help_x = 1240;
+dis_text_off = 150;
 
 // ---- Panel rectangles (filled in by scr_ext_layout) ----
 map_x = 0;

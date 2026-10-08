@@ -86,8 +86,8 @@ function scr_ext_gfx_build_buttons() {
     // Row 3: bitmap colours (screen RAM / colour data)
     _bx = gfx_x;
     _by = gfx_y + 56;
-    var _labels3  = ["Colours [K]", "Find colours [M]", "Koala", "Scr = cursor", "Col = cursor"];
-    var _actions3 = ["gcolour",     "gfindcol",         "gkoala", "gscr",        "gcol"];
+    var _labels3  = ["Colours [K]", "Find colours [M]", "Koala", "Scr = cursor", "Col = cursor", "Export picture"];
+    var _actions3 = ["gcolour",     "gfindcol",         "gkoala", "gscr",        "gcol",         "gexport"];
     for (var _i = 0; _i < array_length(_labels3); _i++) {
         var _w3 = string_width(_labels3[_i]) + 18;
         array_push(gfx_buttons, { bx : _bx, by : _by, bw : _w3, bh : 22, label : _labels3[_i], action : _actions3[_i], arg : 0 });
@@ -313,6 +313,10 @@ function scr_ext_gfx_do_button(_b, _shift) {
             scr_ext_gfx_find_colours();
             break;
 
+        case "gexport":
+            scr_ext_gfx_export_picture();
+            break;
+
         case "ggrid":
             if (gfx_grid) {
                 gfx_grid = false;
@@ -488,6 +492,27 @@ function scr_ext_gfx_addr_at(_mx, _my) {
 /// Draws the viewer: toolbar, swatches, canvas, grid, cursor cell and scroll bar.
 function scr_ext_gfx_draw() {
     var _title = "GRAPHICS  " + scr_ext_gfx_mode_name(gfx_mode) + "   $" + scr_ext_hex(gfx_addr, 4) + "-$" + scr_ext_hex(gfx_addr + gfx_screen_bytes - 1, 4) + "   " + string(gfx_row_cols) + " cols   zoom x" + string(gfx_zoom);
+    if (scr_ext_gfx_is_bitmap()) {
+        if (gfx_use_colour) {
+            _title += "   colours: SCR ";
+            if (gfx_scr_addr >= 0) {
+                _title += "$" + scr_ext_hex(gfx_scr_addr, 4);
+            }
+            else {
+                _title += "-";
+            }
+            _title += "  COL ";
+            if (gfx_col_addr >= 0) {
+                _title += "$" + scr_ext_hex(gfx_col_addr, 4);
+            }
+            else {
+                _title += "-";
+            }
+        }
+        else {
+            _title += "   colours off";
+        }
+    }
     scr_ext_panel(gfx_x, gfx_y, gfx_w, gfx_h, _title);
 
     for (var _i = 0; _i < array_length(gfx_buttons); _i++) {
@@ -520,29 +545,8 @@ function scr_ext_gfx_draw() {
         draw_text(_sx + 3, gfx_swatch_y + 4, _sw_names[_s]);
     }
 
-    var _ctext = "Colours OFF";
-    if (gfx_use_colour) {
-        _ctext = "SCR ";
-        if (gfx_scr_addr >= 0) {
-            _ctext += "$" + scr_ext_hex(gfx_scr_addr, 4);
-        }
-        else {
-            _ctext += "-";
-        }
-        _ctext += "   COL ";
-        if (gfx_col_addr >= 0) {
-            _ctext += "$" + scr_ext_hex(gfx_col_addr, 4);
-        }
-        else {
-            _ctext += "-";
-        }
-        if (!scr_ext_gfx_is_bitmap()) {
-            _ctext += "   (bitmap modes only)";
-        }
-    }
     draw_set_colour(col_dim);
-    draw_text(gfx_colour_text_x, gfx_colour_text_y, _ctext);
-    draw_text(gfx_nudge_text_x, gfx_nudge_text_y, "start $" + scr_ext_hex(gfx_addr, 4) + "   (arrows over the viewer: cell, Shift+arrows: byte)");
+    draw_text(gfx_nudge_text_x, gfx_nudge_text_y, "start $" + scr_ext_hex(gfx_addr, 4));
 
     if (gfx_dirty || !surface_exists(gfx_surf)) {
         scr_ext_gfx_render();
@@ -952,4 +956,97 @@ function scr_ext_gfx_find_colours() {
         _msg += ", background " + string(gfx_col[0]);
     }
     status_text = _msg + ".";
+}
+
+/// @desc scr_ext_gfx_export_picture()
+/// Saves the bitmap in the viewer with its current colours:
+///   .kla / .koa  Koala Painter  (multicolour): $6000, bitmap, screen, colour, background
+///   .art         Art Studio     (hires):       $2000, bitmap, screen, border (9009 bytes)
+///   .png         the picture as you see it (320 x 200)
+function scr_ext_gfx_export_picture() {
+    if (!scr_ext_gfx_is_bitmap()) {
+        status_text = "Export picture works in the bitmap modes - switch to HR or MC Bitmap.";
+        return;
+    }
+    var _mc = scr_ext_gfx_is_mc();
+    var _default = "picture_" + scr_ext_hex(gfx_addr, 4);
+    var _filter = "";
+    if (_mc) {
+        _default += ".kla";
+        _filter = "Koala Painter|*.kla;*.koa|PNG image|*.png";
+    }
+    else {
+        _default += ".art";
+        _filter = "Art Studio hires|*.art|PNG image|*.png";
+    }
+    var _path = get_save_filename(_filter, _default);
+    io_clear();
+    last_win_w = 0;
+    map_dirty = true;
+    gfx_dirty = true;
+    if (_path == "") {
+        return;
+    }
+    var _ext = string_lower(filename_ext(_path));
+
+    // ---- PNG: exactly what the viewer shows ----
+    if (_ext == ".png") {
+        scr_ext_gfx_render();
+        surface_save(gfx_surf, _path);
+        status_text = "Saved " + filename_name(_path) + " (320 x 200).";
+        return;
+    }
+
+    // ---- C64 picture file ----
+    // Art Studio hires files are 9009 bytes: border byte plus 6 unused after the screen
+    var _size = 2 + 8000 + 1000 + 7;
+    if (_mc) {
+        _size = 2 + 8000 + 1000 + 1000 + 1;
+    }
+    var _out = buffer_create(_size, buffer_fixed, 1);
+    buffer_fill(_out, 0, buffer_u8, 0, _size);
+    var _load = 0x2000;
+    if (_mc) {
+        _load = 0x6000;
+    }
+    buffer_poke(_out, 0, buffer_u8, _load & 0xFF);
+    buffer_poke(_out, 1, buffer_u8, _load >> 8);
+
+    for (var _i = 0; _i < 8000; _i++) {
+        buffer_poke(_out, 2 + _i, buffer_u8, buffer_peek(mem_buf, (gfx_addr + _i) & 0xFFFF, buffer_u8));
+    }
+    // Screen RAM: from memory, else the swatch colours for every cell
+    var _scr_fill = (gfx_col[3] << 4) | gfx_col[0];
+    if (_mc) {
+        _scr_fill = (gfx_col[1] << 4) | gfx_col[2];
+    }
+    for (var _i = 0; _i < 1000; _i++) {
+        var _sv = _scr_fill;
+        if (gfx_use_colour && gfx_scr_addr >= 0) {
+            _sv = buffer_peek(mem_buf, (gfx_scr_addr + _i) & 0xFFFF, buffer_u8);
+        }
+        buffer_poke(_out, 8002 + _i, buffer_u8, _sv);
+    }
+    if (_mc) {
+        for (var _i = 0; _i < 1000; _i++) {
+            var _cv = gfx_col[3];
+            if (gfx_use_colour && gfx_col_addr >= 0) {
+                _cv = buffer_peek(mem_buf, (gfx_col_addr + _i) & 0xFFFF, buffer_u8) & 15;
+            }
+            buffer_poke(_out, 9002 + _i, buffer_u8, _cv);
+        }
+        buffer_poke(_out, 10002, buffer_u8, gfx_col[0]);
+    }
+    else {
+        buffer_poke(_out, 9002, buffer_u8, gfx_col[0]);
+    }
+    buffer_save(_out, _path);
+    buffer_delete(_out);
+
+    if (_mc) {
+        status_text = "Saved Koala picture " + filename_name(_path) + " (10003 bytes, load $6000) - ready for C64 Dev Machine's KLA import.";
+    }
+    else {
+        status_text = "Saved Art Studio hires picture " + filename_name(_path) + " (9009 bytes, load $2000).";
+    }
 }

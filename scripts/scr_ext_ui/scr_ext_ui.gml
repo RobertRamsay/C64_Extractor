@@ -103,6 +103,19 @@ function scr_ext_layout() {
     info_y = gfx_y + gfx_h + _pad + _title_h;
     info_w = gfx_w;
 
+    // Top toolbar: buttons sized to their labels
+    draw_set_font(-1);
+    var _tbx = 150;
+    for (var _i = 0; _i < array_length(buttons); _i++) {
+        buttons[_i].bw = string_width(buttons[_i].label) + 18;
+        buttons[_i].bx = _tbx;
+        _tbx += buttons[_i].bw + 6;
+    }
+    toolbar_help_x = _tbx + 14;
+
+    // Disassembly: the text column starts after the widest byte column (4 bytes)
+    dis_text_off = 64 + string_width("00 00 00 00 ") + 12;
+
     scr_ext_gfx_build_buttons();
     scr_ext_gfx_setup();
 
