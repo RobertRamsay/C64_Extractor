@@ -388,7 +388,7 @@ function scr_ext_build_findings() {
         else {
             _conf = round(_conf * 0.85);
         }
-        array_push(findings, { addr : _c.addr, len : _c.len, kind : _c.kind, mode : _c.mode, conf : _conf, why : _why, scr : _c.scr });
+        array_push(findings, { addr : _c.addr, len : _c.len, kind : _c.kind, mode : _c.mode, conf : _conf, why : _why, scr : _c.scr, init : -1, play : -1 });
     }
 
     // ---- Runs of one class: graphics found by shape, text, packed data ----
@@ -437,17 +437,19 @@ function scr_ext_build_findings() {
                 if (_gc > 70) {
                     _gc = 70;
                 }
-                array_push(findings, { addr : _a, len : _len, kind : _kind, mode : _mode, conf : _gc, why : "shape only, no code reference", scr : -1 });
+                array_push(findings, { addr : _a, len : _len, kind : _kind, mode : _mode, conf : _gc, why : "shape only, no code reference", scr : -1, init : -1, play : -1 });
             }
         }
         if (_cls == EXT_CLS_TEXT && _len >= 24) {
-            array_push(findings, { addr : _a, len : _len, kind : "Text", mode : -1, conf : 80, why : string(_len) + " characters", scr : -1 });
+            array_push(findings, { addr : _a, len : _len, kind : "Text", mode : -1, conf : 80, why : string(_len) + " characters", scr : -1, init : -1, play : -1 });
         }
         if (_cls == EXT_CLS_PACKED && _len >= 1024) {
-            array_push(findings, { addr : _a, len : _len, kind : "Packed data", mode : -1, conf : 90, why : "press U to unpack", scr : -1 });
+            array_push(findings, { addr : _a, len : _len, kind : "Packed data", mode : -1, conf : 90, why : "press U to unpack", scr : -1, init : -1, play : -1 });
         }
         _a = _b;
     }
+
+    scr_ext_detect_sid();
 
     array_sort(findings, function(_x, _y) {
         return _y.conf - _x.conf;
@@ -715,4 +717,115 @@ function scr_ext_scan_file_buf(_buf, _len) {
         }
     }
     return _r;
+}
+
+// ---------------------------------------------------------------------------
+// 5. SID music / sound code
+// ---------------------------------------------------------------------------
+
+/// @desc scr_ext_detect_sid()
+/// Finds code that stores to the SID ($D400-$D7FF, registers repeat every $20),
+/// groups those stores into routines, and looks for the usual JMP init / JMP play
+/// table in front of a routine. Adds "SID music" / "SID sound code" findings.
+function scr_ext_detect_sid() {
+    var _ops = global.ext_ops;
+    var _hits = [];
+    for (var _a = 0; _a < 65536; _a++) {
+        if (buffer_peek(istart_buf, _a, buffer_u8) != 1) {
+            continue;
+        }
+        var _op = _ops[buffer_peek(mem_buf, _a, buffer_u8)];
+        if (_op.mn != "STA" && _op.mn != "STX" && _op.mn != "STY" && _op.mn != "SAX") {
+            continue;
+        }
+        if (_op.mode != EXT_MODE_ABS && _op.mode != EXT_MODE_ABX && _op.mode != EXT_MODE_ABY) {
+            continue;
+        }
+        var _t = scr_ext_peek16(_a + 1);
+        if (_t >= 0xD400 && _t < 0xD800) {
+            array_push(_hits, { at : _a, reg : _t & 0x1F, indexed : _op.mode != EXT_MODE_ABS });
+        }
+    }
+
+    var _n = array_length(_hits);
+    var _i = 0;
+    while (_i < _n) {
+        // One routine = stores no more than $300 apart
+        var _j = _i;
+        while (_j + 1 < _n && _hits[_j + 1].at - _hits[_j].at <= 0x300) {
+            _j++;
+        }
+        var _regs = array_create(32, 0);
+        var _distinct = 0;
+        var _indexed = false;
+        var _volume = false;
+        for (var _k = _i; _k <= _j; _k++) {
+            var _r = _hits[_k].reg;
+            if (_regs[_r] == 0) {
+                _regs[_r] = 1;
+                _distinct++;
+            }
+            if (_hits[_k].indexed) {
+                _indexed = true;
+            }
+            if (_r == 0x18) {
+                _volume = true;
+            }
+        }
+        var _start = _hits[_i].at;
+        var _end = _hits[_j].at + 3;
+
+        if (_distinct >= 3) {
+            var _conf = 45;
+            if (_distinct >= 7) {
+                _conf = 70;
+            }
+            if (_distinct >= 12) {
+                _conf = 85;
+            }
+            if (_indexed) {
+                _conf += 5;
+            }
+            if (_volume) {
+                _conf += 5;
+            }
+
+            // JMP init / JMP play table up to $400 before the routine
+            var _init = -1;
+            var _play = -1;
+            var _table = -1;
+            var _lo = _start - 0x400;
+            if (_lo < 0) {
+                _lo = 0;
+            }
+            for (var _p = _start - 1; _p >= _lo; _p--) {
+                if (buffer_peek(mem_buf, _p, buffer_u8) == 0x4C && buffer_peek(mem_buf, (_p + 3) & 0xFFFF, buffer_u8) == 0x4C) {
+                    var _t1 = scr_ext_peek16(_p + 1);
+                    var _t2 = scr_ext_peek16(_p + 4);
+                    if (_t1 >= _start - 0x800 && _t1 <= _end + 0x800 && _t2 >= _start - 0x800 && _t2 <= _end + 0x800 && _t1 != _t2) {
+                        if (scr_ext_is_loaded(_t1) && scr_ext_is_loaded(_t2)) {
+                            _table = _p;
+                            _init = _t1;
+                            _play = _t2;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            var _kind = "SID sound code";
+            var _why = string(_distinct) + " SID registers written";
+            if (_table >= 0) {
+                _kind = "SID music";
+                _conf += 15;
+                _start = _table;
+                _why = "init $" + scr_ext_hex(_init, 4) + "  play $" + scr_ext_hex(_play, 4) + ", " + _why;
+            }
+            if (_conf > 100) {
+                _conf = 100;
+            }
+            array_push(findings, { addr : _start, len : _end - _start, kind : _kind, mode : -1, conf : _conf, why : _why, scr : -1, init : _init, play : _play });
+        }
+        _i = _j + 1;
+    }
 }

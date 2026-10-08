@@ -39,6 +39,18 @@ summary_y = 0;
 summary_w = 900;
 summary_row_h = 22;
 summary_max_rows = 20;
+
+// ---- Whole-disk scan and its findings window ----
+disk_scan_active = false;
+disk_scan_index = 0;
+disk_scan_phase = 0;
+disk_scan_return = -1;
+disk_scan_unpacked = 0;
+disk_skipped = 0;
+disk_results = [];       // { file, fname, cat, kind, addr, len, mode, conf, why }
+disk_open = false;
+disk_filter = 0;
+disk_scroll = 0;
 clue_index = -1;
 verdict_text = "";
 
@@ -193,7 +205,8 @@ buttons = [
     { bx : 680, by : 8, bw : 130, bh : 24, label : "Fullscreen [F11]", action : "fullscreen" },
     { bx : 962, by : 8, bw : 110, bh : 24, label : "Unpack [U]",       action : "unpack" },
     { bx : 1078, by : 8, bw : 150, bh : 24, label : "Deselect [Ctrl+D]", action : "deselect" },
-    { bx : 1234, by : 8, bw : 120, bh : 24, label : "Findings [N]",     action : "summary" }
+    { bx : 1234, by : 8, bw : 120, bh : 24, label : "Findings [N]",     action : "summary" },
+    { bx : 1360, by : 8, bw : 120, bh : 24, label : "Scan disk",        action : "diskscan" }
 ];
 
 // ---- Title menu (top left): file I/O, exports and exit ----
@@ -213,6 +226,9 @@ menu_base = [
     { label : "Export picture (.kla / .art)", key : "",            action : "gexport", arg : "" },
     { label : "Export PNG",                  key : "",             action : "gexppng", arg : "" },
     { label : "Export sprites (.spd / .bin)", key : "",            action : "gexpspr", arg : "" },
+    { label : "-",                           key : "",             action : "", arg : "" },
+    { label : "Scan whole disk",             key : "",             action : "diskscan", arg : "" },
+    { label : "Disk findings",               key : "",             action : "diskfindings", arg : "" },
     { label : "-",                           key : "",             action : "", arg : "" },
     { label : "Exit",                        key : "Ctrl+Q",       action : "exit", arg : "" }
 ];

@@ -1045,8 +1045,10 @@ function scr_ext_decrunch_finish(_result, _pc) {
     }
     status_text = "Unpacked: start $" + scr_ext_hex(_start, 4) + " after " + string(cpu.steps) + " instructions (" + string(cpu.writes) + " bytes written, stage " + string(cpu.stage) + ").";
     scr_ext_cache_store(d64_selected);
-    scr_ext_keep_unpacked();
-    summary_open = true;
+    if (!disk_scan_active) {
+        scr_ext_keep_unpacked();
+        summary_open = true;
+    }
 }
 
 /// @desc scr_ext_unpack_entry()
@@ -1068,6 +1070,18 @@ function scr_ext_maybe_auto_unpack() {
     }
     var _loaded = 65536 - cls_counts[EXT_CLS_NONE];
     if (_loaded > 0 && cls_counts[EXT_CLS_PACKED] * 10 >= _loaded * 3) {
+        if (disk_scan_active) {
+            // During a disk scan only self-extracting files (with a SYS line) are run
+            var _has_sys = false;
+            for (var _i = 0; _i < array_length(entries); _i++) {
+                if (entries[_i].why == "BASIC SYS") {
+                    _has_sys = true;
+                }
+            }
+            if (!_has_sys) {
+                return;
+            }
+        }
         scr_ext_decrunch_start(scr_ext_unpack_entry());
     }
 }

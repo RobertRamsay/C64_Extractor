@@ -20,6 +20,22 @@ if (cpu_active) {
     }
 }
 
+// ---- Whole-disk scan: one file per frame (waits while a file unpacks) ----
+if (disk_scan_active) {
+    if (keyboard_check_pressed(vk_escape)) {
+        cpu_active = false;
+        disk_scan_active = false;
+        disk_scan_index = array_length(d64_files);
+        scr_ext_disk_scan_finish();
+        status_text = "Disk scan stopped early - " + status_text;
+    }
+    else if (!cpu_active) {
+        scr_ext_disk_scan_step();
+    }
+    io_clear();
+    exit;
+}
+
 // ---- Colour picker modal: takes every click until a colour is picked ----
 if (picker_active) {
     var _pmx = device_mouse_x_to_gui(0);
@@ -52,6 +68,16 @@ if (mouse_wheel_up()) {
 }
 if (mouse_wheel_down()) {
     _wheel = 1;
+}
+
+// ---- Disk findings window: takes every click while open ----
+if (disk_open) {
+    scr_ext_disk_input(_mx, _my, _lmb_pressed, _wheel);
+    if (keyboard_check_pressed(vk_escape)) {
+        disk_open = false;
+    }
+    io_clear();
+    exit;
 }
 
 // ---- Analysis summary window: takes every click while open ----

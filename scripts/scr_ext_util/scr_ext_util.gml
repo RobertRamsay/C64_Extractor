@@ -98,6 +98,19 @@ function scr_ext_do_action(_action, _overlay) {
             summary_open = true;
             break;
 
+        case "diskscan":
+            scr_ext_disk_scan_start();
+            break;
+
+        case "diskfindings":
+            if (array_length(disk_results) > 0) {
+                disk_open = true;
+            }
+            else {
+                scr_ext_disk_scan_start();
+            }
+            break;
+
         case "fullscreen":
             if (full_window) {
                 scr_ext_set_full_window(false);

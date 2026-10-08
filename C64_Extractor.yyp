@@ -29,6 +29,7 @@
     {"id":{"name":"scr_ext_d64","path":"scripts/scr_ext_d64/scr_ext_d64.yy",},},
     {"id":{"name":"scr_ext_detect","path":"scripts/scr_ext_detect/scr_ext_detect.yy",},},
     {"id":{"name":"scr_ext_disasm","path":"scripts/scr_ext_disasm/scr_ext_disasm.yy",},},
+    {"id":{"name":"scr_ext_disk","path":"scripts/scr_ext_disk/scr_ext_disk.yy",},},
     {"id":{"name":"scr_ext_gfx","path":"scripts/scr_ext_gfx/scr_ext_gfx.yy",},},
     {"id":{"name":"scr_ext_loader","path":"scripts/scr_ext_loader/scr_ext_loader.yy",},},
     {"id":{"name":"scr_ext_macros","path":"scripts/scr_ext_macros/scr_ext_macros.yy",},},

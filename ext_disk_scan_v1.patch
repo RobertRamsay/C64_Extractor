@@ -1,0 +1,725 @@
+diff --git a/C64_Extractor.yyp b/C64_Extractor.yyp
+index 898d11c..826078d 100644
+--- a/C64_Extractor.yyp
++++ b/C64_Extractor.yyp
+@@ -29,6 +29,7 @@
+     {"id":{"name":"scr_ext_d64","path":"scripts/scr_ext_d64/scr_ext_d64.yy",},},
+     {"id":{"name":"scr_ext_detect","path":"scripts/scr_ext_detect/scr_ext_detect.yy",},},
+     {"id":{"name":"scr_ext_disasm","path":"scripts/scr_ext_disasm/scr_ext_disasm.yy",},},
++    {"id":{"name":"scr_ext_disk","path":"scripts/scr_ext_disk/scr_ext_disk.yy",},},
+     {"id":{"name":"scr_ext_gfx","path":"scripts/scr_ext_gfx/scr_ext_gfx.yy",},},
+     {"id":{"name":"scr_ext_loader","path":"scripts/scr_ext_loader/scr_ext_loader.yy",},},
+     {"id":{"name":"scr_ext_macros","path":"scripts/scr_ext_macros/scr_ext_macros.yy",},},
+diff --git a/objects/obj_ext_main/Create_0.gml b/objects/obj_ext_main/Create_0.gml
+index dfd9333..1a3f6da 100644
+--- a/objects/obj_ext_main/Create_0.gml
++++ b/objects/obj_ext_main/Create_0.gml
+@@ -39,6 +39,18 @@ summary_y = 0;
+ summary_w = 900;
+ summary_row_h = 22;
+ summary_max_rows = 20;
++
++// ---- Whole-disk scan and its findings window ----
++disk_scan_active = false;
++disk_scan_index = 0;
++disk_scan_phase = 0;
++disk_scan_return = -1;
++disk_scan_unpacked = 0;
++disk_skipped = 0;
++disk_results = [];       // { file, fname, cat, kind, addr, len, mode, conf, why }
++disk_open = false;
++disk_filter = 0;
++disk_scroll = 0;
+ clue_index = -1;
+ verdict_text = "";
+ 
+@@ -193,7 +205,8 @@ buttons = [
+     { bx : 680, by : 8, bw : 130, bh : 24, label : "Fullscreen [F11]", action : "fullscreen" },
+     { bx : 962, by : 8, bw : 110, bh : 24, label : "Unpack [U]",       action : "unpack" },
+     { bx : 1078, by : 8, bw : 150, bh : 24, label : "Deselect [Ctrl+D]", action : "deselect" },
+-    { bx : 1234, by : 8, bw : 120, bh : 24, label : "Findings [N]",     action : "summary" }
++    { bx : 1234, by : 8, bw : 120, bh : 24, label : "Findings [N]",     action : "summary" },
++    { bx : 1360, by : 8, bw : 120, bh : 24, label : "Scan disk",        action : "diskscan" }
+ ];
+ 
+ // ---- Title menu (top left): file I/O, exports and exit ----
+@@ -214,6 +227,9 @@ menu_base = [
+     { label : "Export PNG",                  key : "",             action : "gexppng", arg : "" },
+     { label : "Export sprites (.spd / .bin)", key : "",            action : "gexpspr", arg : "" },
+     { label : "-",                           key : "",             action : "", arg : "" },
++    { label : "Scan whole disk",             key : "",             action : "diskscan", arg : "" },
++    { label : "Disk findings",               key : "",             action : "diskfindings", arg : "" },
++    { label : "-",                           key : "",             action : "", arg : "" },
+     { label : "Exit",                        key : "Ctrl+Q",       action : "exit", arg : "" }
+ ];
+ menu_items = [];           // menu_base + recent projects (scr_ext_menu_build)
+diff --git a/objects/obj_ext_main/Draw_64.gml b/objects/obj_ext_main/Draw_64.gml
+index 041ac0e..53bbc37 100644
+--- a/objects/obj_ext_main/Draw_64.gml
++++ b/objects/obj_ext_main/Draw_64.gml
+@@ -300,6 +300,14 @@ for (var _c2 = 0; _c2 < EXT_CLS_COUNT; _c2++) {
+     draw_text(_lx + 160, _row_y, string(cls_counts[_c2]));
+ }
+ 
++// ---- Disk findings / scan progress ----
++if (disk_open) {
++    scr_ext_disk_draw();
++}
++if (disk_scan_active) {
++    scr_ext_disk_progress_draw();
++}
++
+ // ---- Analysis summary ----
+ if (summary_open) {
+     scr_ext_summary_draw();
+diff --git a/objects/obj_ext_main/Step_0.gml b/objects/obj_ext_main/Step_0.gml
+index d49e2ef..b36996c 100644
+--- a/objects/obj_ext_main/Step_0.gml
++++ b/objects/obj_ext_main/Step_0.gml
+@@ -20,6 +20,22 @@ if (cpu_active) {
+     }
+ }
+ 
++// ---- Whole-disk scan: one file per frame (waits while a file unpacks) ----
++if (disk_scan_active) {
++    if (keyboard_check_pressed(vk_escape)) {
++        cpu_active = false;
++        disk_scan_active = false;
++        disk_scan_index = array_length(d64_files);
++        scr_ext_disk_scan_finish();
++        status_text = "Disk scan stopped early - " + status_text;
++    }
++    else if (!cpu_active) {
++        scr_ext_disk_scan_step();
++    }
++    io_clear();
++    exit;
++}
++
+ // ---- Colour picker modal: takes every click until a colour is picked ----
+ if (picker_active) {
+     var _pmx = device_mouse_x_to_gui(0);
+@@ -54,6 +70,16 @@ if (mouse_wheel_down()) {
+     _wheel = 1;
+ }
+ 
++// ---- Disk findings window: takes every click while open ----
++if (disk_open) {
++    scr_ext_disk_input(_mx, _my, _lmb_pressed, _wheel);
++    if (keyboard_check_pressed(vk_escape)) {
++        disk_open = false;
++    }
++    io_clear();
++    exit;
++}
++
+ // ---- Analysis summary window: takes every click while open ----
+ if (summary_open) {
+     if (_lmb_pressed) {
+diff --git a/scripts/scr_ext_cpu/scr_ext_cpu.gml b/scripts/scr_ext_cpu/scr_ext_cpu.gml
+index 8e1f1cb..ad567cc 100644
+--- a/scripts/scr_ext_cpu/scr_ext_cpu.gml
++++ b/scripts/scr_ext_cpu/scr_ext_cpu.gml
+@@ -1045,8 +1045,10 @@ function scr_ext_decrunch_finish(_result, _pc) {
+     }
+     status_text = "Unpacked: start $" + scr_ext_hex(_start, 4) + " after " + string(cpu.steps) + " instructions (" + string(cpu.writes) + " bytes written, stage " + string(cpu.stage) + ").";
+     scr_ext_cache_store(d64_selected);
+-    scr_ext_keep_unpacked();
+-    summary_open = true;
++    if (!disk_scan_active) {
++        scr_ext_keep_unpacked();
++        summary_open = true;
++    }
+ }
+ 
+ /// @desc scr_ext_unpack_entry()
+@@ -1068,6 +1070,18 @@ function scr_ext_maybe_auto_unpack() {
+     }
+     var _loaded = 65536 - cls_counts[EXT_CLS_NONE];
+     if (_loaded > 0 && cls_counts[EXT_CLS_PACKED] * 10 >= _loaded * 3) {
++        if (disk_scan_active) {
++            // During a disk scan only self-extracting files (with a SYS line) are run
++            var _has_sys = false;
++            for (var _i = 0; _i < array_length(entries); _i++) {
++                if (entries[_i].why == "BASIC SYS") {
++                    _has_sys = true;
++                }
++            }
++            if (!_has_sys) {
++                return;
++            }
++        }
+         scr_ext_decrunch_start(scr_ext_unpack_entry());
+     }
+ }
+diff --git a/scripts/scr_ext_detect/scr_ext_detect.gml b/scripts/scr_ext_detect/scr_ext_detect.gml
+index ac92f29..1f17f32 100644
+--- a/scripts/scr_ext_detect/scr_ext_detect.gml
++++ b/scripts/scr_ext_detect/scr_ext_detect.gml
+@@ -388,7 +388,7 @@ function scr_ext_build_findings() {
+         else {
+             _conf = round(_conf * 0.85);
+         }
+-        array_push(findings, { addr : _c.addr, len : _c.len, kind : _c.kind, mode : _c.mode, conf : _conf, why : _why, scr : _c.scr });
++        array_push(findings, { addr : _c.addr, len : _c.len, kind : _c.kind, mode : _c.mode, conf : _conf, why : _why, scr : _c.scr, init : -1, play : -1 });
+     }
+ 
+     // ---- Runs of one class: graphics found by shape, text, packed data ----
+@@ -437,18 +437,20 @@ function scr_ext_build_findings() {
+                 if (_gc > 70) {
+                     _gc = 70;
+                 }
+-                array_push(findings, { addr : _a, len : _len, kind : _kind, mode : _mode, conf : _gc, why : "shape only, no code reference", scr : -1 });
++                array_push(findings, { addr : _a, len : _len, kind : _kind, mode : _mode, conf : _gc, why : "shape only, no code reference", scr : -1, init : -1, play : -1 });
+             }
+         }
+         if (_cls == EXT_CLS_TEXT && _len >= 24) {
+-            array_push(findings, { addr : _a, len : _len, kind : "Text", mode : -1, conf : 80, why : string(_len) + " characters", scr : -1 });
++            array_push(findings, { addr : _a, len : _len, kind : "Text", mode : -1, conf : 80, why : string(_len) + " characters", scr : -1, init : -1, play : -1 });
+         }
+         if (_cls == EXT_CLS_PACKED && _len >= 1024) {
+-            array_push(findings, { addr : _a, len : _len, kind : "Packed data", mode : -1, conf : 90, why : "press U to unpack", scr : -1 });
++            array_push(findings, { addr : _a, len : _len, kind : "Packed data", mode : -1, conf : 90, why : "press U to unpack", scr : -1, init : -1, play : -1 });
+         }
+         _a = _b;
+     }
+ 
++    scr_ext_detect_sid();
++
+     array_sort(findings, function(_x, _y) {
+         return _y.conf - _x.conf;
+     });
+@@ -716,3 +718,114 @@ function scr_ext_scan_file_buf(_buf, _len) {
+     }
+     return _r;
+ }
++
++// ---------------------------------------------------------------------------
++// 5. SID music / sound code
++// ---------------------------------------------------------------------------
++
++/// @desc scr_ext_detect_sid()
++/// Finds code that stores to the SID ($D400-$D7FF, registers repeat every $20),
++/// groups those stores into routines, and looks for the usual JMP init / JMP play
++/// table in front of a routine. Adds "SID music" / "SID sound code" findings.
++function scr_ext_detect_sid() {
++    var _ops = global.ext_ops;
++    var _hits = [];
++    for (var _a = 0; _a < 65536; _a++) {
++        if (buffer_peek(istart_buf, _a, buffer_u8) != 1) {
++            continue;
++        }
++        var _op = _ops[buffer_peek(mem_buf, _a, buffer_u8)];
++        if (_op.mn != "STA" && _op.mn != "STX" && _op.mn != "STY" && _op.mn != "SAX") {
++            continue;
++        }
++        if (_op.mode != EXT_MODE_ABS && _op.mode != EXT_MODE_ABX && _op.mode != EXT_MODE_ABY) {
++            continue;
++        }
++        var _t = scr_ext_peek16(_a + 1);
++        if (_t >= 0xD400 && _t < 0xD800) {
++            array_push(_hits, { at : _a, reg : _t & 0x1F, indexed : _op.mode != EXT_MODE_ABS });
++        }
++    }
++
++    var _n = array_length(_hits);
++    var _i = 0;
++    while (_i < _n) {
++        // One routine = stores no more than $300 apart
++        var _j = _i;
++        while (_j + 1 < _n && _hits[_j + 1].at - _hits[_j].at <= 0x300) {
++            _j++;
++        }
++        var _regs = array_create(32, 0);
++        var _distinct = 0;
++        var _indexed = false;
++        var _volume = false;
++        for (var _k = _i; _k <= _j; _k++) {
++            var _r = _hits[_k].reg;
++            if (_regs[_r] == 0) {
++                _regs[_r] = 1;
++                _distinct++;
++            }
++            if (_hits[_k].indexed) {
++                _indexed = true;
++            }
++            if (_r == 0x18) {
++                _volume = true;
++            }
++        }
++        var _start = _hits[_i].at;
++        var _end = _hits[_j].at + 3;
++
++        if (_distinct >= 3) {
++            var _conf = 45;
++            if (_distinct >= 7) {
++                _conf = 70;
++            }
++            if (_distinct >= 12) {
++                _conf = 85;
++            }
++            if (_indexed) {
++                _conf += 5;
++            }
++            if (_volume) {
++                _conf += 5;
++            }
++
++            // JMP init / JMP play table up to $400 before the routine
++            var _init = -1;
++            var _play = -1;
++            var _table = -1;
++            var _lo = _start - 0x400;
++            if (_lo < 0) {
++                _lo = 0;
++            }
++            for (var _p = _start - 1; _p >= _lo; _p--) {
++                if (buffer_peek(mem_buf, _p, buffer_u8) == 0x4C && buffer_peek(mem_buf, (_p + 3) & 0xFFFF, buffer_u8) == 0x4C) {
++                    var _t1 = scr_ext_peek16(_p + 1);
++                    var _t2 = scr_ext_peek16(_p + 4);
++                    if (_t1 >= _start - 0x800 && _t1 <= _end + 0x800 && _t2 >= _start - 0x800 && _t2 <= _end + 0x800 && _t1 != _t2) {
++                        if (scr_ext_is_loaded(_t1) && scr_ext_is_loaded(_t2)) {
++                            _table = _p;
++                            _init = _t1;
++                            _play = _t2;
++                            break;
++                        }
++                    }
++                }
++            }
++
++            var _kind = "SID sound code";
++            var _why = string(_distinct) + " SID registers written";
++            if (_table >= 0) {
++                _kind = "SID music";
++                _conf += 15;
++                _start = _table;
++                _why = "init $" + scr_ext_hex(_init, 4) + "  play $" + scr_ext_hex(_play, 4) + ", " + _why;
++            }
++            if (_conf > 100) {
++                _conf = 100;
++            }
++            array_push(findings, { addr : _start, len : _end - _start, kind : _kind, mode : -1, conf : _conf, why : _why, scr : -1, init : _init, play : _play });
++        }
++        _i = _j + 1;
++    }
++}
+diff --git a/scripts/scr_ext_disk/scr_ext_disk.gml b/scripts/scr_ext_disk/scr_ext_disk.gml
+new file mode 100644
+index 0000000..1ada492
+--- /dev/null
++++ b/scripts/scr_ext_disk/scr_ext_disk.gml
+@@ -0,0 +1,369 @@
++// ============================================================================
++// Whole-disk scan: opens every file on the D64 in turn (unpacking self-extracting
++// ones on the way), analyses it, and gathers all graphics and SID findings into
++// one list that can be filtered by category. One file is handled per frame.
++// Every file's state is kept in d64_cache, so opening a result is instant.
++// ============================================================================
++
++#macro EXT_DISK_ALL      0
++#macro EXT_DISK_BITMAP   1
++#macro EXT_DISK_CHARSET  2
++#macro EXT_DISK_SPRITE   3
++#macro EXT_DISK_SID      4
++#macro EXT_DISK_FILTERS  5
++
++/// @desc scr_ext_disk_category(finding) - which filter a finding belongs to (0 = none)
++function scr_ext_disk_category(_f) {
++    if (string_pos("SID", _f.kind) == 1) {
++        return EXT_DISK_SID;
++    }
++    if (_f.kind == "Bitmap" || _f.mode == EXT_GFX_BMP_HR || _f.mode == EXT_GFX_BMP_MC) {
++        return EXT_DISK_BITMAP;
++    }
++    if (_f.kind == "Charset" || _f.kind == "Graphics (chars?)") {
++        return EXT_DISK_CHARSET;
++    }
++    if (_f.kind == "Sprite" || _f.kind == "Graphics (sprites?)") {
++        return EXT_DISK_SPRITE;
++    }
++    return 0;
++}
++
++/// @desc scr_ext_disk_filter_name(filter)
++function scr_ext_disk_filter_name(_k) {
++    switch (_k) {
++        case EXT_DISK_ALL:     return "All";
++        case EXT_DISK_BITMAP:  return "Bitmaps";
++        case EXT_DISK_CHARSET: return "Charsets";
++        case EXT_DISK_SPRITE:  return "Sprites";
++        case EXT_DISK_SID:     return "SIDs";
++    }
++    return "?";
++}
++
++/// @desc scr_ext_disk_scan_start()
++function scr_ext_disk_scan_start() {
++    if (!buffer_exists(d64_buf)) {
++        status_text = "Scan disk needs a D64 - open one first.";
++        return;
++    }
++    if (cpu_active) {
++        status_text = "Wait for the current unpack to finish first.";
++        return;
++    }
++    disk_results = [];
++    disk_skipped = 0;
++    disk_scan_index = 0;
++    disk_scan_phase = 0;
++    disk_scan_return = d64_selected;
++    disk_scan_unpacked = 0;
++    disk_scan_active = true;
++    disk_open = false;
++}
++
++/// @desc scr_ext_disk_scan_step()
++/// Called each frame while scanning (and no unpack is running).
++function scr_ext_disk_scan_step() {
++    var _n = array_length(d64_files);
++
++    // Phase 1: the file opened last frame (and any unpack) is done - collect it
++    if (disk_scan_phase == 1) {
++        var _i = disk_scan_index;
++        if (string_pos("unpacked", file_kind) > 0) {
++            disk_scan_unpacked += 1;
++        }
++        var _still_packed = false;
++        var _loaded = 65536 - cls_counts[EXT_CLS_NONE];
++        if (_loaded > 0 && cls_counts[EXT_CLS_PACKED] * 10 >= _loaded * 3) {
++            _still_packed = true;
++            disk_skipped += 1;
++        }
++        for (var _k = 0; _k < array_length(findings); _k++) {
++            var _f = findings[_k];
++            var _cat = scr_ext_disk_category(_f);
++            if (_cat > 0) {
++                array_push(disk_results, {
++                    file  : _i,
++                    fname : d64_files[_i].name,
++                    cat   : _cat,
++                    kind  : _f.kind,
++                    addr  : _f.addr,
++                    len   : _f.len,
++                    mode  : _f.mode,
++                    conf  : _f.conf,
++                    why   : _f.why
++                });
++            }
++        }
++        disk_scan_index += 1;
++        disk_scan_phase = 0;
++        return;
++    }
++
++    // Phase 0: open the next file (restored from the cache if already done)
++    while (disk_scan_index < _n) {
++        var _type = d64_files[disk_scan_index].type;
++        if (_type != 0 && _type != 4) {
++            break;
++        }
++        disk_scan_index += 1;
++    }
++    if (disk_scan_index >= _n) {
++        scr_ext_disk_scan_finish();
++        return;
++    }
++    scr_ext_d64_load_entry(disk_scan_index, false, false);
++    status_text = "Scanning disk: " + string(disk_scan_index + 1) + " / " + string(_n) + "  \"" + d64_files[disk_scan_index].name + "\"";
++    if (cpu_active) {
++        status_text += " - unpacking";
++    }
++    status_text += "   (Esc stops)";
++    disk_scan_phase = 1;
++}
++
++/// @desc scr_ext_disk_scan_finish()
++function scr_ext_disk_scan_finish() {
++    disk_scan_active = false;
++
++    // Best first
++    array_sort(disk_results, function(_x, _y) {
++        return _y.conf - _x.conf;
++    });
++
++    // Back to the file that was on screen before
++    if (disk_scan_return >= 0) {
++        scr_ext_d64_load_entry(disk_scan_return, false, false);
++    }
++
++    status_text = "Disk scan: " + string(array_length(disk_results)) + " graphics / SID findings";
++    if (disk_scan_unpacked > 0) {
++        status_text += ", " + string(disk_scan_unpacked) + " files unpacked";
++    }
++    if (disk_skipped > 0) {
++        status_text += ", " + string(disk_skipped) + " still packed (no SYS line - loaded by the game's own loader)";
++    }
++
++    // Keep the unpacked files: autosave the project, or offer to make one
++    if (disk_scan_unpacked > 0) {
++        scr_ext_keep_unpacked();
++    }
++    disk_filter = EXT_DISK_ALL;
++    disk_scroll = 0;
++    disk_open = true;
++}
++
++/// @desc scr_ext_disk_filtered() - results for the current filter
++function scr_ext_disk_filtered() {
++    var _out = [];
++    for (var _i = 0; _i < array_length(disk_results); _i++) {
++        if (disk_filter == EXT_DISK_ALL || disk_results[_i].cat == disk_filter) {
++            array_push(_out, disk_results[_i]);
++        }
++    }
++    return _out;
++}
++
++/// @desc scr_ext_disk_count(filter)
++function scr_ext_disk_count(_k) {
++    var _c = 0;
++    for (var _i = 0; _i < array_length(disk_results); _i++) {
++        if (_k == EXT_DISK_ALL || disk_results[_i].cat == _k) {
++            _c += 1;
++        }
++    }
++    return _c;
++}
++
++/// @desc scr_ext_disk_rect() - [x, y, w, h, list_y, rows]
++function scr_ext_disk_rect() {
++    var _w = gui_w - 160;
++    if (_w > 1200) {
++        _w = 1200;
++    }
++    var _h = gui_h - 120;
++    var _x = floor((gui_w - _w) / 2);
++    var _y = 60;
++    var _list_y = _y + 80;
++    var _rows = floor((_h - 80 - 30) / summary_row_h);
++    return [_x, _y, _w, _h, _list_y, _rows];
++}
++
++/// @desc scr_ext_disk_button_rect(i) - [x, y, w, h] of filter button i (5 = Rescan)
++function scr_ext_disk_button_rect(_i) {
++    var _r = scr_ext_disk_rect();
++    return [_r[0] + 14 + _i * 132, _r[1] + 38, 124, 26];
++}
++
++/// @desc scr_ext_disk_open_result(result)
++/// Opens the result's file (instantly, from the cache) and jumps to the finding.
++function scr_ext_disk_open_result(_res) {
++    scr_ext_d64_load_entry(_res.file, false, false);
++    for (var _i = 0; _i < array_length(findings); _i++) {
++        if (findings[_i].addr == _res.addr && findings[_i].kind == _res.kind) {
++            scr_ext_jump_finding(_i);
++            return;
++        }
++    }
++    // Not in this file's list any more: go to the address anyway
++    if (_res.mode >= 0) {
++        gfx_mode = _res.mode;
++        gfx_zoom_lock = 0;
++        scr_ext_gfx_setup();
++    }
++    gfx_addr = _res.addr;
++    gfx_phase = gfx_addr mod gfx_row_bytes;
++    gfx_dirty = true;
++    cursor_addr = _res.addr;
++    scr_ext_views_to(_res.addr);
++}
++
++/// @desc scr_ext_disk_input(mx, my, pressed, wheel)
++/// Modal handling for the disk findings window.
++function scr_ext_disk_input(_mx, _my, _pressed, _wheel) {
++    var _r = scr_ext_disk_rect();
++    var _list = scr_ext_disk_filtered();
++    var _max = array_length(_list) - _r[5];
++    if (_max < 0) {
++        _max = 0;
++    }
++    if (_wheel != 0) {
++        disk_scroll += _wheel * 3;
++    }
++    if (disk_scroll > _max) {
++        disk_scroll = _max;
++    }
++    if (disk_scroll < 0) {
++        disk_scroll = 0;
++    }
++    if (!_pressed) {
++        return;
++    }
++    // Filter buttons and Rescan
++    for (var _b = 0; _b <= EXT_DISK_FILTERS; _b++) {
++        var _br = scr_ext_disk_button_rect(_b);
++        if (point_in_rectangle(_mx, _my, _br[0], _br[1], _br[0] + _br[2], _br[1] + _br[3])) {
++            if (_b == EXT_DISK_FILTERS) {
++                scr_ext_disk_scan_start();
++            }
++            else {
++                disk_filter = _b;
++                disk_scroll = 0;
++            }
++            return;
++        }
++    }
++    // A row
++    for (var _i = 0; _i < _r[5]; _i++) {
++        var _idx = disk_scroll + _i;
++        if (_idx >= array_length(_list)) {
++            break;
++        }
++        var _ry = _r[4] + _i * summary_row_h;
++        if (point_in_rectangle(_mx, _my, _r[0] + 8, _ry, _r[0] + _r[2] - 8, _ry + summary_row_h - 1)) {
++            disk_open = false;
++            scr_ext_disk_open_result(_list[_idx]);
++            return;
++        }
++    }
++    // Outside the window closes it
++    if (!point_in_rectangle(_mx, _my, _r[0], _r[1], _r[0] + _r[2], _r[1] + _r[3])) {
++        disk_open = false;
++    }
++}
++
++/// @desc scr_ext_disk_draw()
++function scr_ext_disk_draw() {
++    var _r = scr_ext_disk_rect();
++    var _x = _r[0];
++    var _y = _r[1];
++    var _w = _r[2];
++    var _h = _r[3];
++    var _mx = device_mouse_x_to_gui(0);
++    var _my = device_mouse_y_to_gui(0);
++
++    draw_set_alpha(0.55);
++    draw_set_colour(c_black);
++    draw_rectangle(0, 0, gui_w, gui_h, false);
++    draw_set_alpha(1);
++    draw_set_colour(col_panel);
++    draw_rectangle(_x, _y, _x + _w, _y + _h, false);
++    draw_set_colour(col_title);
++    draw_rectangle(_x, _y, _x + _w, _y + _h, true);
++    draw_text(_x + 14, _y + 10, "DISK FINDINGS  \"" + d64_disk_name + "\"   click a row to open it - wheel scrolls - Esc closes");
++
++    // Filter buttons with counts, then Rescan
++    for (var _b = 0; _b <= EXT_DISK_FILTERS; _b++) {
++        var _br = scr_ext_disk_button_rect(_b);
++        var _label = "Rescan disk";
++        var _on = false;
++        if (_b < EXT_DISK_FILTERS) {
++            _label = scr_ext_disk_filter_name(_b) + " (" + string(scr_ext_disk_count(_b)) + ")";
++            _on = (_b == disk_filter);
++        }
++        scr_ext_draw_button({ bx : _br[0], by : _br[1], bw : _br[2], bh : _br[3], label : _label, action : "", arg : 0 }, _on);
++    }
++
++    var _list = scr_ext_disk_filtered();
++    if (array_length(_list) == 0) {
++        draw_set_colour(col_text);
++        draw_text(_x + 14, _r[4], "Nothing in this category.");
++        return;
++    }
++    for (var _i = 0; _i < _r[5]; _i++) {
++        var _idx = disk_scroll + _i;
++        if (_idx >= array_length(_list)) {
++            break;
++        }
++        var _f = _list[_idx];
++        var _ry = _r[4] + _i * summary_row_h;
++        if (point_in_rectangle(_mx, _my, _x + 8, _ry, _x + _w - 8, _ry + summary_row_h - 1)) {
++            draw_set_colour(col_button_on);
++            draw_rectangle(_x + 8, _ry, _x + _w - 8, _ry + summary_row_h - 1, false);
++        }
++        var _cc = EXT_CLS_DOUBT;
++        if (_f.conf >= 85) {
++            _cc = EXT_CLS_SURE;
++        }
++        else if (_f.conf >= 60) {
++            _cc = EXT_CLS_LIKELY;
++        }
++        draw_set_colour(scr_ext_cls_colour(_cc));
++        draw_set_halign(fa_right);
++        draw_text(_x + 62, _ry + 3, string(_f.conf) + "%");
++        draw_set_halign(fa_left);
++        draw_set_colour(col_text);
++        draw_text(_x + 76, _ry + 3, "\"" + _f.fname + "\"");
++        draw_text(_x + 250, _ry + 3, _f.kind);
++        draw_text(_x + 430, _ry + 3, "$" + scr_ext_hex(_f.addr, 4) + "-$" + scr_ext_hex(_f.addr + _f.len - 1, 4));
++        draw_set_colour(col_dim);
++        draw_text(_x + 570, _ry + 3, _f.why);
++    }
++    var _shown_to = disk_scroll + _r[5];
++    if (_shown_to > array_length(_list)) {
++        _shown_to = array_length(_list);
++    }
++    draw_set_colour(col_dim);
++    draw_text(_x + 14, _y + _h - 24, string(disk_scroll + 1) + "-" + string(_shown_to) + " of " + string(array_length(_list)) + "   " + status_text);
++}
++
++/// @desc scr_ext_disk_progress_draw() - progress bar while scanning
++function scr_ext_disk_progress_draw() {
++    var _w = 520;
++    var _h = 70;
++    var _x = floor((gui_w - _w) / 2);
++    var _y = floor((gui_h - _h) / 2);
++    draw_set_colour(col_panel);
++    draw_rectangle(_x, _y, _x + _w, _y + _h, false);
++    draw_set_colour(col_title);
++    draw_rectangle(_x, _y, _x + _w, _y + _h, true);
++    draw_text(_x + 14, _y + 10, status_text);
++    var _n = array_length(d64_files);
++    var _p = 0;
++    if (_n > 0) {
++        _p = disk_scan_index / _n;
++    }
++    draw_set_colour(col_sb_track);
++    draw_rectangle(_x + 14, _y + 38, _x + _w - 14, _y + 54, false);
++    draw_set_colour(col_gfx_range);
++    draw_rectangle(_x + 14, _y + 38, _x + 14 + (_w - 28) * _p, _y + 54, false);
++}
+diff --git a/scripts/scr_ext_disk/scr_ext_disk.yy b/scripts/scr_ext_disk/scr_ext_disk.yy
+new file mode 100644
+index 0000000..c622bbc
+--- /dev/null
++++ b/scripts/scr_ext_disk/scr_ext_disk.yy
+@@ -0,0 +1,13 @@
++{
++  "$GMScript":"v1",
++  "%Name":"scr_ext_disk",
++  "isCompatibility":false,
++  "isDnD":false,
++  "name":"scr_ext_disk",
++  "parent":{
++    "name":"Scripts",
++    "path":"folders/Scripts.yy",
++  },
++  "resourceType":"GMScript",
++  "resourceVersion":"2.0",
++}
+\ No newline at end of file
+diff --git a/scripts/scr_ext_util/scr_ext_util.gml b/scripts/scr_ext_util/scr_ext_util.gml
+index 43455d5..86bae2d 100644
+--- a/scripts/scr_ext_util/scr_ext_util.gml
++++ b/scripts/scr_ext_util/scr_ext_util.gml
+@@ -98,6 +98,19 @@ function scr_ext_do_action(_action, _overlay) {
+             summary_open = true;
+             break;
+ 
++        case "diskscan":
++            scr_ext_disk_scan_start();
++            break;
++
++        case "diskfindings":
++            if (array_length(disk_results) > 0) {
++                disk_open = true;
++            }
++            else {
++                scr_ext_disk_scan_start();
++            }
++            break;
++
+         case "fullscreen":
+             if (full_window) {
+                 scr_ext_set_full_window(false);

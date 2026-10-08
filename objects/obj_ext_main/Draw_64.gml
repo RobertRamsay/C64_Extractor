@@ -300,6 +300,14 @@ for (var _c2 = 0; _c2 < EXT_CLS_COUNT; _c2++) {
     draw_text(_lx + 160, _row_y, string(cls_counts[_c2]));
 }
 
+// ---- Disk findings / scan progress ----
+if (disk_open) {
+    scr_ext_disk_draw();
+}
+if (disk_scan_active) {
+    scr_ext_disk_progress_draw();
+}
+
 // ---- Analysis summary ----
 if (summary_open) {
     scr_ext_summary_draw();
