@@ -316,6 +316,9 @@ function scr_ext_jump_finding(_index) {
     cursor_addr = _c.addr;
     scr_ext_views_to(_c.addr);
     status_text = "Finding " + string(_index + 1) + "/" + string(array_length(findings)) + ": " + scr_ext_finding_text(_c);
+    if (_c.kind == "SID music" && _c.init >= 0) {
+        scr_ext_sid_start(_c.init, _c.play, 0);
+    }
 }
 
 /// @desc scr_ext_finding_text(finding) - one line for the status bar / summary

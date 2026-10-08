@@ -176,6 +176,7 @@ function scr_ext_d64_load_entry(_index, _overlay, _fresh) {
         return false;
     }
     cpu_active = false;
+    scr_ext_sid_stop();
 
     if (!_overlay) {
         // Remember the file we're leaving, exactly as it is now

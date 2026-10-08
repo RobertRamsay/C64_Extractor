@@ -10,6 +10,7 @@
   },
   "defaultScriptType":1,
   "Folders":[
+    {"$GMFolder":"","%Name":"Extensions","folderPath":"folders/Extensions.yy","name":"Extensions","resourceType":"GMFolder","resourceVersion":"2.0",},
     {"$GMFolder":"","%Name":"Objects","folderPath":"folders/Objects.yy","name":"Objects","resourceType":"GMFolder","resourceVersion":"2.0",},
     {"$GMFolder":"","%Name":"Scripts","folderPath":"folders/Scripts.yy","name":"Scripts","resourceType":"GMFolder","resourceVersion":"2.0",},
   ],
@@ -36,8 +37,10 @@
     {"id":{"name":"scr_ext_map","path":"scripts/scr_ext_map/scr_ext_map.yy",},},
     {"id":{"name":"scr_ext_opcode_table","path":"scripts/scr_ext_opcode_table/scr_ext_opcode_table.yy",},},
     {"id":{"name":"scr_ext_project","path":"scripts/scr_ext_project/scr_ext_project.yy",},},
+    {"id":{"name":"scr_ext_sid","path":"scripts/scr_ext_sid/scr_ext_sid.yy",},},
     {"id":{"name":"scr_ext_ui","path":"scripts/scr_ext_ui/scr_ext_ui.yy",},},
     {"id":{"name":"scr_ext_util","path":"scripts/scr_ext_util/scr_ext_util.yy",},},
+    {"id":{"name":"sid64","path":"extensions/sid64/sid64.yy",},},
   ],
   "resourceType":"GMProject",
   "resourceVersion":"2.0",

@@ -1,4 +1,6 @@
 /// @desc Free buffers and surfaces
+scr_ext_sid_stop();
+buffer_delete(sid_shadow);
 
 buffer_delete(mem_buf);
 buffer_delete(loaded_buf);

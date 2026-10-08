@@ -9,6 +9,11 @@ if (full_window_delay > 0) {
 }
 scr_ext_update_window();
 
+// ---- SID playback keeps its audio queue topped up ----
+if (sid_playing) {
+    scr_ext_sid_update();
+}
+
 // ---- Decrunch runner: a time slice per frame ----
 if (cpu_active) {
     if (keyboard_check_pressed(vk_escape)) {
@@ -336,6 +341,9 @@ if (keyboard_check_pressed(ord("K"))) {
 }
 if (keyboard_check_pressed(ord("U"))) {
     scr_ext_do_action("unpack", false);
+}
+if (keyboard_check_pressed(ord("P"))) {
+    scr_ext_sid_toggle(_shift && !keyboard_check(vk_control), keyboard_check(vk_control));
 }
 if (keyboard_check_pressed(ord("J"))) {
     scr_ext_jump_clue();

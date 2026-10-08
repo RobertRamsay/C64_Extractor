@@ -8,6 +8,8 @@
 #macro EXT_CPU_MAX_STEPS   80000000
 #macro EXT_CPU_MIN_WRITES  1024
 #macro EXT_CPU_MAX_STAGES  4
+// Return address pushed for SID init / play calls: reaching it means "returned"
+#macro EXT_CPU_SENTINEL    0xFFF0
 
 #macro CPU_ADC 0
 #macro CPU_ALR 1
@@ -373,6 +375,7 @@ function scr_ext_cpu_new_state() {
 /// Copies the loaded file into the runner's RAM and starts at entry
 /// (normally the BASIC SYS address). Runs a slice per frame from the Step event.
 function scr_ext_decrunch_start(_entry) {
+    scr_ext_sid_stop();
     buffer_copy(mem_buf, 0, 65536, cpu_mem, 0);
     buffer_fill(cpu_w, 0, buffer_u8, 0, 65536);
     buffer_fill(cpu_execd, 0, buffer_u8, 0, 65536);
@@ -419,9 +422,13 @@ function scr_ext_decrunch_resume() {
     status_text = "Unpacking stage " + string(cpu.stage) + "...";
 }
 
-/// @desc scr_ext_cpu_slice(ms)
+/// @desc scr_ext_cpu_slice(ms, call_mode, max_steps)
 /// Runs the 6502 for up to ms milliseconds, then hands back to the frame.
-function scr_ext_cpu_slice(_ms) {
+/// call_mode = false: decrunch runner (stop rules below, finishes the unpack).
+/// call_mode = true : runs a subroutine (SID init / play) until it returns to
+///                    EXT_CPU_SENTINEL, or max_steps; returns the result string.
+/// Stores to the SID ($D400-$D7FF while I/O is visible) always land in sid_shadow.
+function scr_ext_cpu_slice(_ms, _call_mode = false, _max_steps = EXT_CPU_MAX_STEPS) {
     var _m = cpu_mem;
     var _wb = cpu_w;
     var _ex = cpu_execd;
@@ -460,11 +467,18 @@ function scr_ext_cpu_slice(_ms) {
             if (get_timer() > _deadline) {
                 break;
             }
-            if (_steps >= EXT_CPU_MAX_STEPS) {
+            if (_steps >= _max_steps) {
                 _result = "budget";
                 _result_pc = _pc;
                 break;
             }
+        }
+
+        // ---- Called subroutine finished ----
+        if (_call_mode && _pc == EXT_CPU_SENTINEL) {
+            _result = "return";
+            _result_pc = _pc;
+            break;
         }
 
         // ---- Stop rules ----
@@ -480,12 +494,16 @@ function scr_ext_cpu_slice(_ms) {
                 _prev_jsr = false;
                 continue;
             }
+            // A called routine that ends with JMP $EA31 (and friends) has finished too
             _result = "rom";
+            if (_call_mode) {
+                _result = "return";
+            }
             _result_pc = _pc;
             break;
         }
         // A jump / return into bytes written (since last run) by the unpacker
-        if (_prev_ctrl && _writes >= EXT_CPU_MIN_WRITES && _pc >= 0x0400) {
+        if (!_call_mode && _prev_ctrl && _writes >= EXT_CPU_MIN_WRITES && _pc >= 0x0400) {
             if (buffer_peek(_wb, _pc, buffer_u8) == 1 && buffer_peek(_ex, _pc, buffer_u8) == 0) {
                 _result = "start";
                 _result_pc = _pc;
@@ -561,6 +579,16 @@ function scr_ext_cpu_slice(_ms) {
                 }
                 else if (_ea == 0xDC00 || _ea == 0xDC01) {
                     _v = 0xFF;
+                }
+                else if (_ea >= 0xD400 && _ea < 0xD800) {
+                    // SID: oscillator 3 / envelope 3 read back as noise, others as written
+                    var _sr = _ea & 0x1F;
+                    if (_sr == 0x1B || _sr == 0x1C) {
+                        _v = irandom(255);
+                    }
+                    else {
+                        _v = buffer_peek(sid_shadow, _sr, buffer_u8);
+                    }
                 }
             }
             else {
@@ -941,7 +969,10 @@ function scr_ext_cpu_slice(_ms) {
                 _io = ((_wv & 3) != 0) && ((_wv & 4) != 0);
             }
             if (_ea >= 0xD000 && _ea < 0xE000 && _io) {
-                // I/O register write: ignored
+                // I/O register write: only the SID's are kept (for playback)
+                if (_ea >= 0xD400 && _ea < 0xD800) {
+                    buffer_poke(sid_shadow, _ea & 0x1F, buffer_u8, _wv);
+                }
             }
             else {
                 buffer_poke(_m, _ea, buffer_u8, _wv);
@@ -974,12 +1005,16 @@ function scr_ext_cpu_slice(_ms) {
     cpu.prev_ctrl = _prev_ctrl;
     cpu.prev_jsr = _prev_jsr;
 
+    if (_call_mode) {
+        return _result;
+    }
     if (_result != "") {
         scr_ext_decrunch_finish(_result, _result_pc);
     }
     else {
         status_text = "Unpacking: " + string(_steps) + " instructions, " + string(_writes) + " bytes written   (Esc to cancel)";
     }
+    return _result;
 }
 
 /// @desc scr_ext_decrunch_finish(result, pc)

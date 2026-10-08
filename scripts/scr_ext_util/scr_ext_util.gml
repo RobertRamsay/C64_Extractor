@@ -98,6 +98,10 @@ function scr_ext_do_action(_action, _overlay) {
             summary_open = true;
             break;
 
+        case "sidplay":
+            scr_ext_sid_toggle(_overlay, false);
+            break;
+
         case "diskscan":
             scr_ext_disk_scan_start();
             break;
@@ -300,6 +304,7 @@ function scr_ext_export_selection() {
 /// Quits. An open project is saved first; unsaved work gets one question.
 function scr_ext_exit() {
     cpu_active = false;
+    scr_ext_sid_stop();
     if (project_path != "") {
         scr_ext_project_write(project_path);
         game_end();

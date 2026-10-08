@@ -18,6 +18,7 @@ function scr_ext_reset_memory() {
 /// overlay = true keeps what is already in memory (multi-load games).
 function scr_ext_load_path(_path, _overlay) {
     cpu_active = false;
+    scr_ext_sid_stop();
     if (!file_exists(_path)) {
         status_text = "File not found: " + _path;
         return false;

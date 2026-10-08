@@ -14,6 +14,24 @@ cpu_active = false;
 cpu_entry = 0;
 auto_unpack = true;
 
+// ---- SID playback (reSID via the sid64 extension) ----
+sid_shadow = buffer_create(32, buffer_fixed, 1);     // SID registers as last written
+buffer_fill(sid_shadow, 0, buffer_u8, 0, 32);
+sid_ok = false;
+sid_model = 0;           // 0 = 6581 (most games), 1 = 8580
+sid_playing = false;
+sid_init_addr = -1;
+sid_play_addr = -1;
+sid_song = 0;
+sid_queue = -1;
+sid_inst = -1;
+sid_fb = -1;
+sid_ring = [];
+sid_ring_i = 0;
+sid_cap = 0;
+sid_rendered = 0;
+sid_start_time = 0;
+
 // ---- 64K C64 memory image and per-byte analysis buffers ----
 mem_buf    = buffer_create(65536, buffer_fixed, 1);   // byte values
 loaded_buf = buffer_create(65536, buffer_fixed, 1);   // 1 = byte came from a file
@@ -206,7 +224,8 @@ buttons = [
     { bx : 962, by : 8, bw : 110, bh : 24, label : "Unpack [U]",       action : "unpack" },
     { bx : 1078, by : 8, bw : 150, bh : 24, label : "Deselect [Ctrl+D]", action : "deselect" },
     { bx : 1234, by : 8, bw : 120, bh : 24, label : "Findings [N]",     action : "summary" },
-    { bx : 1360, by : 8, bw : 120, bh : 24, label : "Scan disk",        action : "diskscan" }
+    { bx : 1360, by : 8, bw : 120, bh : 24, label : "Scan disk",        action : "diskscan" },
+    { bx : 1486, by : 8, bw : 120, bh : 24, label : "Play SID [P]",     action : "sidplay" }
 ];
 
 // ---- Title menu (top left): file I/O, exports and exit ----
@@ -255,4 +274,5 @@ col_sel       = make_colour_rgb(70, 110, 70);
 gpu_set_texfilter(false);
 scr_ext_reset_memory();
 scr_ext_menu_build();
+scr_ext_sid_setup();
 scr_ext_update_window();
