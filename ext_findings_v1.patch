@@ -1,0 +1,482 @@
+diff --git a/objects/obj_ext_main/Create_0.gml b/objects/obj_ext_main/Create_0.gml
+index 66c25a8..4df1048 100644
+--- a/objects/obj_ext_main/Create_0.gml
++++ b/objects/obj_ext_main/Create_0.gml
+@@ -30,7 +30,15 @@ segments = [];          // { start, finish, name }
+ entries = [];           // { addr, strong, why }
+ manual_entries = [];    // addresses traced by hand with C
+ cls_counts = array_create(EXT_CLS_COUNT, 0);
+-vic_clues = [];          // { addr, len, kind, mode, why }
++vic_clues = [];          // { addr, len, kind, mode, why, scr, conf }
++clue_base_conf = 100;    // confidence given to clues from the write being processed
++findings = [];           // { addr, len, kind, mode, conf, why, scr } best first
++summary_open = false;    // analysis summary window
++summary_x = 0;
++summary_y = 0;
++summary_w = 900;
++summary_row_h = 22;
++summary_max_rows = 20;
+ clue_index = -1;
+ verdict_text = "";
+ 
+@@ -184,7 +192,8 @@ buttons = [
+     { bx : 554, by : 8, bw : 120, bh : 24, label : "Shade map [V]",    action : "shade" },
+     { bx : 680, by : 8, bw : 130, bh : 24, label : "Fullscreen [F11]", action : "fullscreen" },
+     { bx : 962, by : 8, bw : 110, bh : 24, label : "Unpack [U]",       action : "unpack" },
+-    { bx : 1078, by : 8, bw : 150, bh : 24, label : "Deselect [Ctrl+D]", action : "deselect" }
++    { bx : 1078, by : 8, bw : 150, bh : 24, label : "Deselect [Ctrl+D]", action : "deselect" },
++    { bx : 1234, by : 8, bw : 120, bh : 24, label : "Findings [N]",     action : "summary" }
+ ];
+ 
+ // ---- Title menu (top left): file I/O, exports and exit ----
+diff --git a/objects/obj_ext_main/Draw_64.gml b/objects/obj_ext_main/Draw_64.gml
+index 074a7d8..c92ead6 100644
+--- a/objects/obj_ext_main/Draw_64.gml
++++ b/objects/obj_ext_main/Draw_64.gml
+@@ -199,8 +199,26 @@ for (var _r = 0; _r < dir_rows; _r++) {
+         draw_text(dir_x + 346, _fy, "SYS" + string(_f.sys));
+     }
+     if (_f.packed) {
+-        draw_set_colour(scr_ext_cls_colour(EXT_CLS_PACKED));
+-        draw_text(dir_x + 420, _fy, "PACKED");
++        // Once unpacked (on screen now, or kept in the project) it says so in yellow
++        var _unpacked = false;
++        if (_idx == d64_selected) {
++            if (string_pos("unpacked", file_kind) > 0) {
++                _unpacked = true;
++            }
++        }
++        else if (scr_ext_cache_has(_idx)) {
++            if (string_pos("unpacked", d64_cache[_idx].file_kind) > 0) {
++                _unpacked = true;
++            }
++        }
++        if (_unpacked) {
++            draw_set_colour(scr_ext_cls_colour(EXT_CLS_LIKELY));
++            draw_text(dir_x + 420, _fy, "UNPACKED");
++        }
++        else {
++            draw_set_colour(scr_ext_cls_colour(EXT_CLS_PACKED));
++            draw_text(dir_x + 420, _fy, "PACKED");
++        }
+     }
+ }
+ scr_ext_sb_draw(sb_dir);
+@@ -282,6 +300,11 @@ for (var _c2 = 0; _c2 < EXT_CLS_COUNT; _c2++) {
+     draw_text(_lx + 160, _row_y, string(cls_counts[_c2]));
+ }
+ 
++// ---- Analysis summary ----
++if (summary_open) {
++    scr_ext_summary_draw();
++}
++
+ // ---- Title menu dropdown ----
+ if (menu_open) {
+     scr_ext_menu_draw();
+diff --git a/objects/obj_ext_main/Step_0.gml b/objects/obj_ext_main/Step_0.gml
+index 8845571..fad4541 100644
+--- a/objects/obj_ext_main/Step_0.gml
++++ b/objects/obj_ext_main/Step_0.gml
+@@ -54,6 +54,26 @@ if (mouse_wheel_down()) {
+     _wheel = 1;
+ }
+ 
++// ---- Analysis summary window: takes every click while open ----
++if (summary_open) {
++    if (_lmb_pressed) {
++        var _si = scr_ext_summary_hit(_mx, _my);
++        summary_open = false;
++        if (_si >= 0) {
++            scr_ext_jump_finding(_si);
++        }
++    }
++    if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(ord("N"))) {
++        summary_open = false;
++    }
++    io_clear();
++    exit;
++}
++if (keyboard_check_pressed(ord("N")) && !keyboard_check(vk_control)) {
++    summary_open = true;
++    exit;
++}
++
+ // ---- Title menu: open = it gets every click; a click elsewhere just closes it ----
+ if (menu_open) {
+     if (_lmb_pressed) {
+diff --git a/scripts/scr_ext_analyse/scr_ext_analyse.gml b/scripts/scr_ext_analyse/scr_ext_analyse.gml
+index 7f4461b..d459287 100644
+--- a/scripts/scr_ext_analyse/scr_ext_analyse.gml
++++ b/scripts/scr_ext_analyse/scr_ext_analyse.gml
+@@ -43,10 +43,11 @@ function scr_ext_analyse() {
+     var _loaded = 65536 - cls_counts[EXT_CLS_NONE];
+     verdict_text = "";
+     if (_loaded > 0 && cls_counts[EXT_CLS_PACKED] * 10 >= _loaded * 3) {
+-        verdict_text = "Mostly packed data - this file is crunched. Load a VICE memory dump taken after it decrunches to see inside.";
++        verdict_text = "Mostly packed data - this file is crunched. Press U to unpack it.";
+     }
+-    else if (array_length(vic_clues) > 0) {
+-        verdict_text = string(array_length(vic_clues)) + " VIC clues from the code (screen / charset / bitmap / sprites) - press J to step through them.";
++    scr_ext_build_findings();
++    if (verdict_text == "" && array_length(findings) > 0) {
++        verdict_text = string(array_length(findings)) + " findings (" + string(array_length(vic_clues)) + " from VIC registers in the code) - N shows the summary, J steps through them.";
+     }
+     map_dirty = true;
+ }
+diff --git a/scripts/scr_ext_cpu/scr_ext_cpu.gml b/scripts/scr_ext_cpu/scr_ext_cpu.gml
+index 0637a5c..8e1f1cb 100644
+--- a/scripts/scr_ext_cpu/scr_ext_cpu.gml
++++ b/scripts/scr_ext_cpu/scr_ext_cpu.gml
+@@ -1046,6 +1046,7 @@ function scr_ext_decrunch_finish(_result, _pc) {
+     status_text = "Unpacked: start $" + scr_ext_hex(_start, 4) + " after " + string(cpu.steps) + " instructions (" + string(cpu.writes) + " bytes written, stage " + string(cpu.stage) + ").";
+     scr_ext_cache_store(d64_selected);
+     scr_ext_keep_unpacked();
++    summary_open = true;
+ }
+ 
+ /// @desc scr_ext_unpack_entry()
+diff --git a/scripts/scr_ext_detect/scr_ext_detect.gml b/scripts/scr_ext_detect/scr_ext_detect.gml
+index 66abcb7..ac92f29 100644
+--- a/scripts/scr_ext_detect/scr_ext_detect.gml
++++ b/scripts/scr_ext_detect/scr_ext_detect.gml
+@@ -121,7 +121,7 @@ function scr_ext_find_vic_writes() {
+                 _v = _ry;
+             }
+             if (_v >= 0) {
+-                array_push(_writes, { target : scr_ext_peek16(_a + 1), value : _v, at : _a });
++                array_push(_writes, { target : scr_ext_peek16(_a + 1), value : _v, at : _a, cls : _c });
+             }
+         }
+ 
+@@ -176,7 +176,7 @@ function scr_ext_add_clue(_addr, _len, _kind, _mode, _why) {
+             return false;
+         }
+     }
+-    array_push(vic_clues, { addr : _a, len : _len, kind : _kind, mode : _mode, why : _why, scr : -1 });
++    array_push(vic_clues, { addr : _a, len : _len, kind : _kind, mode : _mode, why : _why, scr : -1, conf : clue_base_conf });
+     return true;
+ }
+ 
+@@ -222,6 +222,11 @@ function scr_ext_apply_vic_clues(_writes) {
+     for (var _i = 0; _i < array_length(_writes); _i++) {
+         var _w = _writes[_i];
+         var _why = "$" + scr_ext_hex(_w.target, 4) + "=$" + scr_ext_hex(_w.value, 2) + " @ $" + scr_ext_hex(_w.at, 4);
++        // Writes in code traced from a strong entry are certain; weaker ones less so
++        clue_base_conf = 100;
++        if (_w.cls != EXT_CLS_SURE) {
++            clue_base_conf = 85;
++        }
+ 
+         // $D018: screen, charset and bitmap locations inside each VIC bank
+         if (_w.target == 0xD018) {
+@@ -280,15 +285,22 @@ function scr_ext_apply_vic_clues(_writes) {
+ }
+ 
+ /// @desc scr_ext_jump_clue()
+-/// Steps to the next VIC clue: viewer mode, viewer address and cursor all jump there.
++/// J: steps to the next finding (VIC clues first, then detected graphics / text / packed).
+ function scr_ext_jump_clue() {
+-    var _n = array_length(vic_clues);
++    var _n = array_length(findings);
+     if (_n == 0) {
+-        status_text = "No VIC clues found in the traced code.";
++        status_text = "No findings yet - press R to analyse.";
+         return;
+     }
+     clue_index = (clue_index + 1) mod _n;
+-    var _c = vic_clues[clue_index];
++    scr_ext_jump_finding(clue_index);
++}
++
++/// @desc scr_ext_jump_finding(index)
++/// Puts the viewer (mode, address, colours) and the cursor on a finding.
++function scr_ext_jump_finding(_index) {
++    clue_index = _index;
++    var _c = findings[_index];
+     if (_c.mode >= 0) {
+         gfx_mode = _c.mode;
+         gfx_zoom_lock = 0;
+@@ -303,7 +315,143 @@ function scr_ext_jump_clue() {
+     gfx_dirty = true;
+     cursor_addr = _c.addr;
+     scr_ext_views_to(_c.addr);
+-    status_text = "Clue " + string(clue_index + 1) + "/" + string(_n) + ": " + _c.kind + " at $" + scr_ext_hex(_c.addr, 4) + "  (" + _c.why + ")";
++    status_text = "Finding " + string(_index + 1) + "/" + string(array_length(findings)) + ": " + scr_ext_finding_text(_c);
++}
++
++/// @desc scr_ext_finding_text(finding) - one line for the status bar / summary
++function scr_ext_finding_text(_c) {
++    var _t = _c.kind + " at $" + scr_ext_hex(_c.addr, 4) + "-$" + scr_ext_hex(_c.addr + _c.len - 1, 4);
++    _t += "   " + string(_c.conf) + "% confidence";
++    if (_c.why != "") {
++        _t += "   (" + _c.why + ")";
++    }
++    return _t;
++}
++
++/// @desc scr_ext_region_gfx_fraction(addr, length)
++/// Share (0..1) of the region's 64-byte blocks that look like graphics:
++/// loaded, not all one value, and smooth from row to row.
++function scr_ext_region_gfx_fraction(_addr, _len) {
++    var _pc = global.ext_popcount;
++    var _blocks = _len div 64;
++    if (_blocks < 1) {
++        _blocks = 1;
++    }
++    var _good = 0;
++    for (var _b = 0; _b < _blocks; _b++) {
++        var _base = _addr + _b * 64;
++        if (buffer_peek(loaded_buf, _base & 0xFFFF, buffer_u8) == 0) {
++            continue;
++        }
++        var _first = buffer_peek(mem_buf, _base & 0xFFFF, buffer_u8);
++        var _varied = false;
++        var _h1 = 0;
++        var _h3 = 0;
++        for (var _i = 0; _i < 61; _i++) {
++            var _v0 = buffer_peek(mem_buf, (_base + _i) & 0xFFFF, buffer_u8);
++            if (_v0 != _first) {
++                _varied = true;
++            }
++            _h1 += _pc[_v0 ^ buffer_peek(mem_buf, (_base + _i + 1) & 0xFFFF, buffer_u8)];
++            _h3 += _pc[_v0 ^ buffer_peek(mem_buf, (_base + _i + 3) & 0xFFFF, buffer_u8)];
++        }
++        var _h = _h1;
++        if (_h3 < _h) {
++            _h = _h3;
++        }
++        if (_varied && _h / 61 <= 2.6) {
++            _good += 1;
++        }
++    }
++    return _good / _blocks;
++}
++
++/// @desc scr_ext_build_findings()
++/// Collects everything worth looking at, with a confidence, best first.
++function scr_ext_build_findings() {
++    findings = [];
++    clue_index = -1;
++
++    // ---- VIC clues: the code says where these are ----
++    for (var _i = 0; _i < array_length(vic_clues); _i++) {
++        var _c = vic_clues[_i];
++        var _conf = _c.conf;
++        var _why = _c.why;
++        if (buffer_peek(loaded_buf, _c.addr, buffer_u8) == 0) {
++            _conf = round(_conf * 0.45);
++            _why += ", not in the file - filled at runtime";
++        }
++        else if (_c.kind != "Screen") {
++            // Scale by how much of it actually looks like graphics
++            _conf = round(_conf * (0.55 + 0.45 * scr_ext_region_gfx_fraction(_c.addr, _c.len)));
++        }
++        else {
++            _conf = round(_conf * 0.85);
++        }
++        array_push(findings, { addr : _c.addr, len : _c.len, kind : _c.kind, mode : _c.mode, conf : _conf, why : _why, scr : _c.scr });
++    }
++
++    // ---- Runs of one class: graphics found by shape, text, packed data ----
++    var _a = 0;
++    while (_a < 65536) {
++        var _cls = buffer_peek(cls_buf, _a, buffer_u8);
++        var _b = _a;
++        while (_b < 65536 && buffer_peek(cls_buf, _b, buffer_u8) == _cls) {
++            _b++;
++        }
++        var _len = _b - _a;
++
++        if (_cls == EXT_CLS_GFX && _len >= 256) {
++            // Skip what a VIC clue already covers
++            var _covered = false;
++            for (var _k = 0; _k < array_length(vic_clues); _k++) {
++                var _vc = vic_clues[_k];
++                if (_a >= _vc.addr && _a < _vc.addr + _vc.len) {
++                    _covered = true;
++                }
++            }
++            if (!_covered) {
++                // Sprites change little 3 bytes apart, characters 1 byte apart
++                var _pc = global.ext_popcount;
++                var _h1 = 0;
++                var _h3 = 0;
++                var _n = _len - 3;
++                if (_n > 1024) {
++                    _n = 1024;
++                }
++                for (var _j = 0; _j < _n; _j++) {
++                    var _v = buffer_peek(mem_buf, _a + _j, buffer_u8);
++                    _h1 += _pc[_v ^ buffer_peek(mem_buf, _a + _j + 1, buffer_u8)];
++                    _h3 += _pc[_v ^ buffer_peek(mem_buf, _a + _j + 3, buffer_u8)];
++                }
++                var _kind = "Graphics (chars?)";
++                var _mode = EXT_GFX_CHAR_HR;
++                if (_h3 < _h1) {
++                    _kind = "Graphics (sprites?)";
++                    _mode = EXT_GFX_SPR_HR;
++                }
++                if (scr_ext_gfx_is_mc()) {
++                    _mode += 1;     // keep the viewer's MC choice (HR -> MC variant)
++                }
++                var _gc = 40 + floor(_len / 256) * 3;
++                if (_gc > 70) {
++                    _gc = 70;
++                }
++                array_push(findings, { addr : _a, len : _len, kind : _kind, mode : _mode, conf : _gc, why : "shape only, no code reference", scr : -1 });
++            }
++        }
++        if (_cls == EXT_CLS_TEXT && _len >= 24) {
++            array_push(findings, { addr : _a, len : _len, kind : "Text", mode : -1, conf : 80, why : string(_len) + " characters", scr : -1 });
++        }
++        if (_cls == EXT_CLS_PACKED && _len >= 1024) {
++            array_push(findings, { addr : _a, len : _len, kind : "Packed data", mode : -1, conf : 90, why : "press U to unpack", scr : -1 });
++        }
++        _a = _b;
++    }
++
++    array_sort(findings, function(_x, _y) {
++        return _y.conf - _x.conf;
++    });
+ }
+ 
+ // ---------------------------------------------------------------------------
+diff --git a/scripts/scr_ext_util/scr_ext_util.gml b/scripts/scr_ext_util/scr_ext_util.gml
+index 11c94d7..55de561 100644
+--- a/scripts/scr_ext_util/scr_ext_util.gml
++++ b/scripts/scr_ext_util/scr_ext_util.gml
+@@ -91,6 +91,11 @@ function scr_ext_do_action(_action, _overlay) {
+ 
+         case "analyse":
+             scr_ext_analyse();
++            summary_open = true;
++            break;
++
++        case "summary":
++            summary_open = true;
+             break;
+ 
+         case "fullscreen":
+@@ -344,3 +349,121 @@ function scr_ext_menu_draw() {
+         draw_set_halign(fa_left);
+     }
+ }
++
++/// @desc scr_ext_summary_lines() - the header lines above the findings list
++function scr_ext_summary_lines() {
++    var _lines = [];
++    array_push(_lines, "Code: " + string(cls_counts[EXT_CLS_SURE]) + " bytes traced for sure, " + string(cls_counts[EXT_CLS_LIKELY]) + " likely, from " + string(array_length(entries)) + " entry points");
++    array_push(_lines, "Graphics " + string(cls_counts[EXT_CLS_GFX]) + "   Text " + string(cls_counts[EXT_CLS_TEXT]) + "   Packed " + string(cls_counts[EXT_CLS_PACKED]) + "   Not code " + string(cls_counts[EXT_CLS_NOT]) + "  (bytes)");
++    array_push(_lines, string(array_length(vic_clues)) + " locations set by the code's VIC register writes (bank, $D018, sprite pointers)");
++    return _lines;
++}
++
++/// @desc scr_ext_summary_rect() - [x, y, w, h] of the summary window
++function scr_ext_summary_rect() {
++    var _rows = array_length(findings);
++    if (_rows > summary_max_rows) {
++        _rows = summary_max_rows;
++    }
++    if (_rows < 1) {
++        _rows = 1;
++    }
++    var _w = summary_w;
++    if (_w > gui_w - 40) {
++        _w = gui_w - 40;
++    }
++    var _h = 40 + 3 * line_h + 16 + _rows * summary_row_h + 30;
++    var _x = floor((gui_w - _w) / 2);
++    var _y = floor((gui_h - _h) / 2);
++    return [_x, _y, _w, _h];
++}
++
++/// @desc scr_ext_summary_hit(mx, my) - findings row under the mouse, or -1
++function scr_ext_summary_hit(_mx, _my) {
++    var _r = scr_ext_summary_rect();
++    var _ty = _r[1] + 40 + 3 * line_h + 16;
++    var _n = array_length(findings);
++    if (_n > summary_max_rows) {
++        _n = summary_max_rows;
++    }
++    for (var _i = 0; _i < _n; _i++) {
++        var _ry = _ty + _i * summary_row_h;
++        if (point_in_rectangle(_mx, _my, _r[0] + 8, _ry, _r[0] + _r[2] - 8, _ry + summary_row_h - 1)) {
++            return _i;
++        }
++    }
++    return -1;
++}
++
++/// @desc scr_ext_summary_draw()
++function scr_ext_summary_draw() {
++    var _r = scr_ext_summary_rect();
++    var _x = _r[0];
++    var _y = _r[1];
++    var _w = _r[2];
++    var _h = _r[3];
++
++    draw_set_alpha(0.55);
++    draw_set_colour(c_black);
++    draw_rectangle(0, 0, gui_w, gui_h, false);
++    draw_set_alpha(1);
++    draw_set_colour(col_panel);
++    draw_rectangle(_x, _y, _x + _w, _y + _h, false);
++    draw_set_colour(col_title);
++    draw_rectangle(_x, _y, _x + _w, _y + _h, true);
++    draw_text(_x + 14, _y + 10, "ANALYSIS SUMMARY   click a finding to view it - J steps through them later - Esc closes");
++
++    var _hy = _y + 40;
++    var _lines = scr_ext_summary_lines();
++    draw_set_colour(col_dim);
++    for (var _i = 0; _i < array_length(_lines); _i++) {
++        draw_text(_x + 14, _hy + _i * line_h, _lines[_i]);
++    }
++
++    var _ty = _y + 40 + 3 * line_h + 16;
++    var _n = array_length(findings);
++    if (_n == 0) {
++        draw_set_colour(col_text);
++        draw_text(_x + 14, _ty, "No graphics, text or packed data found.");
++        return;
++    }
++    var _shown = _n;
++    if (_shown > summary_max_rows) {
++        _shown = summary_max_rows;
++    }
++    var _hover = scr_ext_summary_hit(device_mouse_x_to_gui(0), device_mouse_y_to_gui(0));
++    for (var _i = 0; _i < _shown; _i++) {
++        var _f = findings[_i];
++        var _ry = _ty + _i * summary_row_h;
++        if (_i == _hover) {
++            draw_set_colour(col_button_on);
++            draw_rectangle(_x + 8, _ry, _x + _w - 8, _ry + summary_row_h - 1, false);
++        }
++        // Confidence in green / yellow / orange
++        var _cc = EXT_CLS_DOUBT;
++        if (_f.conf >= 85) {
++            _cc = EXT_CLS_SURE;
++        }
++        else if (_f.conf >= 60) {
++            _cc = EXT_CLS_LIKELY;
++        }
++        draw_set_colour(scr_ext_cls_colour(_cc));
++        draw_set_halign(fa_right);
++        draw_text(_x + 62, _ry + 3, string(_f.conf) + "%");
++        draw_set_halign(fa_left);
++        draw_set_colour(col_text);
++        draw_text(_x + 76, _ry + 3, _f.kind);
++        draw_text(_x + 270, _ry + 3, "$" + scr_ext_hex(_f.addr, 4) + "-$" + scr_ext_hex(_f.addr + _f.len - 1, 4));
++        var _mode_name = "";
++        if (_f.mode >= 0) {
++            _mode_name = scr_ext_gfx_mode_name(_f.mode);
++        }
++        draw_text(_x + 410, _ry + 3, _mode_name);
++        draw_set_colour(col_dim);
++        draw_text(_x + 520, _ry + 3, _f.why);
++    }
++    if (_n > _shown) {
++        draw_set_colour(col_dim);
++        draw_text(_x + 14, _ty + _shown * summary_row_h + 4, "+ " + string(_n - _shown) + " more (lower confidence) - J reaches them too");
++    }
++}
