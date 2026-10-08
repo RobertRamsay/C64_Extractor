@@ -426,14 +426,14 @@ if (!gfx_width_drag && point_in_rectangle(_mx, _my, gfx_canvas_x, gfx_canvas_y, 
         }
     }
     if (_wheel != 0) {
-        // Wheel = one row of cells, Ctrl+wheel = one cell, Shift+wheel = one byte
+        // Wheel = one row of cells, Shift+wheel = one byte,
+        // Ctrl+wheel = Cols -/+ (wheel down shows more columns)
         if (_shift) {
             gfx_addr = (gfx_addr + _wheel) & 0xFFFF;
             gfx_phase = gfx_addr mod gfx_row_bytes;
         }
         else if (keyboard_check(vk_control)) {
-            gfx_addr = (gfx_addr + _wheel * gfx_cell_bytes) & 0xFFFF;
-            gfx_phase = gfx_addr mod gfx_row_bytes;
+            scr_ext_gfx_do_button({ action : "gcols", arg : _wheel }, false);
         }
         else {
             gfx_addr = (gfx_addr + _wheel * gfx_row_cols * gfx_cell_bytes) & 0xFFFF;

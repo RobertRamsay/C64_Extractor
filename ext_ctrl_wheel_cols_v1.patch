@@ -1,0 +1,35 @@
+diff --git a/objects/obj_ext_main/Draw_64.gml b/objects/obj_ext_main/Draw_64.gml
+index c92ead6..041ac0e 100644
+--- a/objects/obj_ext_main/Draw_64.gml
++++ b/objects/obj_ext_main/Draw_64.gml
+@@ -31,7 +31,7 @@ if (autosave_timer > 0) {
+     draw_text(toolbar_help_x, 12, "[autosaving]  " + filename_name(project_path));
+ }
+ else if (toolbar_help_x < gui_w - 200) {
+-    draw_text(toolbar_help_x, 12, "J clue  W region  B/E sel  1-6 modes  L align  K/M colours  arrows/Shift: nudge");
++    draw_text(toolbar_help_x, 12, "J clue  W region  B/E sel  1-6 modes  L align  K/M colours  arrows/Shift: nudge  Ctrl+wheel: cols");
+ }
+ 
+ // ---- Memory map ----
+diff --git a/objects/obj_ext_main/Step_0.gml b/objects/obj_ext_main/Step_0.gml
+index 7dd944a..d49e2ef 100644
+--- a/objects/obj_ext_main/Step_0.gml
++++ b/objects/obj_ext_main/Step_0.gml
+@@ -426,14 +426,14 @@ if (!gfx_width_drag && point_in_rectangle(_mx, _my, gfx_canvas_x, gfx_canvas_y,
+         }
+     }
+     if (_wheel != 0) {
+-        // Wheel = one row of cells, Ctrl+wheel = one cell, Shift+wheel = one byte
++        // Wheel = one row of cells, Shift+wheel = one byte,
++        // Ctrl+wheel = Cols -/+ (wheel down shows more columns)
+         if (_shift) {
+             gfx_addr = (gfx_addr + _wheel) & 0xFFFF;
+             gfx_phase = gfx_addr mod gfx_row_bytes;
+         }
+         else if (keyboard_check(vk_control)) {
+-            gfx_addr = (gfx_addr + _wheel * gfx_cell_bytes) & 0xFFFF;
+-            gfx_phase = gfx_addr mod gfx_row_bytes;
++            scr_ext_gfx_do_button({ action : "gcols", arg : _wheel }, false);
+         }
+         else {
+             gfx_addr = (gfx_addr + _wheel * gfx_row_cols * gfx_cell_bytes) & 0xFFFF;

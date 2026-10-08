@@ -31,7 +31,7 @@ if (autosave_timer > 0) {
     draw_text(toolbar_help_x, 12, "[autosaving]  " + filename_name(project_path));
 }
 else if (toolbar_help_x < gui_w - 200) {
-    draw_text(toolbar_help_x, 12, "J clue  W region  B/E sel  1-6 modes  L align  K/M colours  arrows/Shift: nudge");
+    draw_text(toolbar_help_x, 12, "J clue  W region  B/E sel  1-6 modes  L align  K/M colours  arrows/Shift: nudge  Ctrl+wheel: cols");
 }
 
 // ---- Memory map ----
