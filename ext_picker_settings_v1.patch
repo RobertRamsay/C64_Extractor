@@ -1,0 +1,227 @@
+diff --git a/objects/obj_ext_main/Create_0.gml b/objects/obj_ext_main/Create_0.gml
+index b50b7a8..97c1e4e 100644
+--- a/objects/obj_ext_main/Create_0.gml
++++ b/objects/obj_ext_main/Create_0.gml
+@@ -40,6 +40,15 @@ d64_path = "";         // where the open D64 came from (projects embed a copy)
+ d64_cache = [];        // per directory entry: saved state of that file (or -1)
+ project_path = "";     // set by save / load: unpacks auto-save over it
+ autosave_timer = 0;    // frames left to show [autosaving]
++
++// ---- Colour picker modal (opens from the viewer swatches) ----
++picker_active = false;
++picker_target = 0;     // 0 BG, 1 M1, 2 M2, 3 FG
++picker_x = 0;
++picker_y = 0;
++picker_cell = 44;      // size of one colour square
++picker_names = ["Black", "White", "Red", "Cyan", "Purple", "Green", "Blue", "Yellow",
++                "Orange", "Brown", "Light red", "Dark grey", "Grey", "Light green", "Light blue", "Light grey"];
+ d64_tracks = 35;
+ d64_disk_name = "";
+ d64_files = [];         // { name, type, typename, track, sector, blocks }
+diff --git a/objects/obj_ext_main/Draw_64.gml b/objects/obj_ext_main/Draw_64.gml
+index a5493b3..84a12cd 100644
+--- a/objects/obj_ext_main/Draw_64.gml
++++ b/objects/obj_ext_main/Draw_64.gml
+@@ -276,4 +276,9 @@ for (var _c2 = 0; _c2 < EXT_CLS_COUNT; _c2++) {
+     draw_text(_lx + 160, _row_y, string(cls_counts[_c2]));
+ }
+ 
++// ---- Colour picker modal (drawn last, over everything) ----
++if (picker_active) {
++    scr_ext_picker_draw();
++}
++
+ draw_set_colour(c_white);
+diff --git a/objects/obj_ext_main/Step_0.gml b/objects/obj_ext_main/Step_0.gml
+index 87ae701..65d699e 100644
+--- a/objects/obj_ext_main/Step_0.gml
++++ b/objects/obj_ext_main/Step_0.gml
+@@ -20,6 +20,27 @@ if (cpu_active) {
+     }
+ }
+ 
++// ---- Colour picker modal: takes every click until a colour is picked ----
++if (picker_active) {
++    var _pmx = device_mouse_x_to_gui(0);
++    var _pmy = device_mouse_y_to_gui(0);
++    if (mouse_check_button_pressed(mb_left)) {
++        var _pick = scr_ext_picker_hit(_pmx, _pmy);
++        if (_pick >= 0) {
++            gfx_col[picker_target] = _pick;
++            gfx_dirty = true;
++            picker_active = false;
++            var _slot_names = ["BG", "M1", "M2", "FG"];
++            status_text = "Viewer " + _slot_names[picker_target] + " colour: " + string(_pick) + " (" + picker_names[_pick] + ")";
++        }
++    }
++    if (keyboard_check_pressed(vk_escape)) {
++        picker_active = false;
++    }
++    io_clear();
++    exit;
++}
++
+ var _mx = device_mouse_x_to_gui(0);
+ var _my = device_mouse_y_to_gui(0);
+ var _shift = keyboard_check(vk_shift);
+@@ -131,13 +152,7 @@ if (gfx_repeat_index >= 0) {
+ if (_lmb_pressed) {
+     var _sw = scr_ext_gfx_swatch_hit(_mx, _my);
+     if (_sw >= 0) {
+-        if (_shift) {
+-            gfx_col[_sw] = (gfx_col[_sw] + 15) mod 16;
+-        }
+-        else {
+-            gfx_col[_sw] = (gfx_col[_sw] + 1) mod 16;
+-        }
+-        gfx_dirty = true;
++        scr_ext_picker_open(_sw);
+         _lmb_pressed = false;
+     }
+ }
+diff --git a/scripts/scr_ext_gfx/scr_ext_gfx.gml b/scripts/scr_ext_gfx/scr_ext_gfx.gml
+index 3d2f20d..bda30ee 100644
+--- a/scripts/scr_ext_gfx/scr_ext_gfx.gml
++++ b/scripts/scr_ext_gfx/scr_ext_gfx.gml
+@@ -1180,3 +1180,99 @@ function scr_ext_gfx_export_png() {
+     surface_save(gfx_surf, _path);
+     status_text = "Saved " + filename_name(_path) + " (" + string(gfx_img_w) + " x " + string(gfx_img_h) + ").";
+ }
++
++// ---------------------------------------------------------------------------
++// Colour picker modal
++// ---------------------------------------------------------------------------
++
++/// @desc scr_ext_picker_open(swatch) - opens the 16-colour picker under a swatch
++function scr_ext_picker_open(_target) {
++    picker_target = _target;
++    var _w = picker_cell * 4 + 24;
++    var _h = picker_cell * 4 + 60;
++    picker_x = gfx_swatch_x + _target * 46;
++    picker_y = gfx_swatch_y + 28;
++    if (picker_x + _w > gui_w - 8) {
++        picker_x = gui_w - 8 - _w;
++    }
++    if (picker_y + _h > gui_h - 8) {
++        picker_y = gui_h - 8 - _h;
++    }
++    picker_active = true;
++}
++
++/// @desc scr_ext_picker_hit(mx, my) - C64 colour under the mouse, or -1
++function scr_ext_picker_hit(_mx, _my) {
++    var _gx = picker_x + 12;
++    var _gy = picker_y + 30;
++    for (var _i = 0; _i < 16; _i++) {
++        var _cx = _gx + (_i mod 4) * picker_cell;
++        var _cy = _gy + (_i div 4) * picker_cell;
++        if (point_in_rectangle(_mx, _my, _cx, _cy, _cx + picker_cell - 4, _cy + picker_cell - 4)) {
++            return _i;
++        }
++    }
++    return -1;
++}
++
++/// @desc scr_ext_picker_draw()
++function scr_ext_picker_draw() {
++    var _w = picker_cell * 4 + 24;
++    var _h = picker_cell * 4 + 60;
++
++    // Dim everything behind it
++    draw_set_alpha(0.55);
++    draw_set_colour(c_black);
++    draw_rectangle(0, 0, gui_w, gui_h, false);
++    draw_set_alpha(1);
++
++    draw_set_colour(col_panel);
++    draw_rectangle(picker_x, picker_y, picker_x + _w, picker_y + _h, false);
++    draw_set_colour(col_title);
++    draw_rectangle(picker_x, picker_y, picker_x + _w, picker_y + _h, true);
++    var _names = ["BG", "M1", "M2", "FG"];
++    draw_text(picker_x + 12, picker_y + 8, "Pick " + _names[picker_target] + " colour   (Esc cancels)");
++
++    var _mx = device_mouse_x_to_gui(0);
++    var _my = device_mouse_y_to_gui(0);
++    var _hover = scr_ext_picker_hit(_mx, _my);
++    var _gx = picker_x + 12;
++    var _gy = picker_y + 30;
++    for (var _i = 0; _i < 16; _i++) {
++        var _cx = _gx + (_i mod 4) * picker_cell;
++        var _cy = _gy + (_i div 4) * picker_cell;
++        var _rgb = c64_pal[_i];
++        draw_set_colour(make_colour_rgb(_rgb[0], _rgb[1], _rgb[2]));
++        draw_rectangle(_cx, _cy, _cx + picker_cell - 4, _cy + picker_cell - 4, false);
++        draw_set_colour(col_border);
++        draw_rectangle(_cx, _cy, _cx + picker_cell - 4, _cy + picker_cell - 4, true);
++        if (_i == gfx_col[picker_target]) {
++            draw_set_colour(c_white);
++            draw_rectangle(_cx - 2, _cy - 2, _cx + picker_cell - 2, _cy + picker_cell - 2, true);
++        }
++        if (_i == _hover) {
++            draw_set_colour(col_gfx_range);
++            draw_rectangle(_cx - 3, _cy - 3, _cx + picker_cell - 1, _cy + picker_cell - 1, true);
++            draw_rectangle(_cx - 2, _cy - 2, _cx + picker_cell - 2, _cy + picker_cell - 2, true);
++        }
++        // Index number, in black or white depending on the colour behind it
++        var _lum = _rgb[0] * 0.3 + _rgb[1] * 0.59 + _rgb[2] * 0.11;
++        if (_lum > 110) {
++            draw_set_colour(c_black);
++        }
++        else {
++            draw_set_colour(c_white);
++        }
++        draw_text(_cx + 4, _cy + 3, string(_i));
++    }
++
++    draw_set_colour(col_text);
++    var _label = "";
++    if (_hover >= 0) {
++        _label = string(_hover) + "  " + picker_names[_hover];
++    }
++    else {
++        _label = "current: " + string(gfx_col[picker_target]) + "  " + picker_names[gfx_col[picker_target]];
++    }
++    draw_text(picker_x + 12, _gy + picker_cell * 4 + 4, _label);
++}
+diff --git a/scripts/scr_ext_project/scr_ext_project.gml b/scripts/scr_ext_project/scr_ext_project.gml
+index b973518..12823a0 100644
+--- a/scripts/scr_ext_project/scr_ext_project.gml
++++ b/scripts/scr_ext_project/scr_ext_project.gml
+@@ -7,7 +7,7 @@
+ // Loading a project skips every unpack; classification is simply re-run.
+ // ============================================================================
+ 
+-#macro EXT_PROJECT_VERSION 2
++#macro EXT_PROJECT_VERSION 3
+ 
+ /// @desc scr_ext_project_save(save_as)
+ /// Saves over the current project when there is one (unless save_as),
+@@ -104,6 +104,8 @@ function scr_ext_project_write(_path) {
+         mem            : buffer_base64_encode(mem_buf, 0, 65536),
+         loaded         : buffer_base64_encode(loaded_buf, 0, 65536),
+         map_shaded     : map_shaded,
++        auto_unpack    : auto_unpack,
++        d64_scroll     : d64_scroll,
+         view           : scr_ext_view_capture(),
+         d64_image      : _d64_image,
+         d64_path       : d64_path,
+@@ -256,7 +258,19 @@ function scr_ext_project_load(_path) {
+             sel_end        : _d.sel_end
+         });
+     }
++    // ---- Project-wide display settings ----
+     map_shaded = _d.map_shaded;
++    if (_d.version >= 3) {
++        auto_unpack = _d.auto_unpack;
++        d64_scroll = _d.d64_scroll;
++        var _max_scroll = array_length(d64_files) - dir_rows;
++        if (d64_scroll > _max_scroll) {
++            d64_scroll = _max_scroll;
++        }
++        if (d64_scroll < 0) {
++            d64_scroll = 0;
++        }
++    }
+     map_dirty = true;
+ 
+     project_path = _path;

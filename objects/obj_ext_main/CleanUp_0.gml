@@ -20,3 +20,4 @@ if (buffer_exists(gfx_buf)) {
 if (surface_exists(gfx_surf)) {
     surface_free(gfx_surf);
 }
+scr_ext_cache_clear();

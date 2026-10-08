@@ -46,6 +46,7 @@ function scr_ext_d64_name(_offset, _max) {
 /// Validates the image size and reads the directory into d64_files.
 function scr_ext_d64_open(_size) {
     d64_files = [];
+    scr_ext_cache_clear();
     d64_disk_name = "";
     d64_selected = -1;
     d64_scroll = 0;
@@ -98,6 +99,8 @@ function scr_ext_d64_open(_size) {
         _s = buffer_peek(d64_buf, _o + 1, buffer_u8);
         _guard++;
     }
+
+    d64_cache = array_create(array_length(d64_files), -1);
 
     // Quick per-file summary: load range, SYS address, packed or not
     for (var _f = 0; _f < array_length(d64_files); _f++) {
@@ -160,9 +163,12 @@ function scr_ext_d64_extract(_track, _sector) {
     return { buf : _out, len : _len };
 }
 
-/// @desc scr_ext_d64_load_entry(index, overlay)
+/// @desc scr_ext_d64_load_entry(index, overlay, fresh)
+/// Files already opened in this session / project come back from d64_cache in
+/// the state they were left in (unpacked, aligned, coloured). fresh = true
+/// ignores the cache and reads the file from the disk image again.
 /// Extracts a directory entry and loads it into C64 memory as a PRG.
-function scr_ext_d64_load_entry(_index, _overlay) {
+function scr_ext_d64_load_entry(_index, _overlay, _fresh) {
     if (!buffer_exists(d64_buf)) {
         return false;
     }
@@ -170,7 +176,23 @@ function scr_ext_d64_load_entry(_index, _overlay) {
         return false;
     }
     cpu_active = false;
-    project_path = "";
+
+    if (!_overlay) {
+        // Remember the file we're leaving, exactly as it is now
+        scr_ext_cache_store(d64_selected);
+        if (!_fresh) {
+            if (scr_ext_cache_has(_index)) {
+                scr_ext_cache_restore(_index);
+                d64_selected = _index;
+                status_text = "\"" + d64_files[_index].name + "\" restored as you left it (Ctrl+click reloads it from the disk).";
+                return true;
+            }
+        }
+        else {
+            scr_ext_cache_drop(_index);
+        }
+    }
+
     var _f = d64_files[_index];
     var _res = scr_ext_d64_extract(_f.track, _f.sector);
 

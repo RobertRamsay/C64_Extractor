@@ -64,7 +64,7 @@ function scr_ext_load_path(_path, _overlay) {
             }
         }
         if (_first >= 0) {
-            scr_ext_d64_load_entry(_first, _overlay);
+            scr_ext_d64_load_entry(_first, _overlay, true);
         }
         else {
             if (!_overlay) {

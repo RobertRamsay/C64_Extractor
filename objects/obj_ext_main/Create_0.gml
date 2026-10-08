@@ -36,9 +36,19 @@ verdict_text = "";
 
 // ---- D64 state ----
 d64_buf = -1;
-d64_path = "";         // the open D64, remembered in project files
+d64_path = "";         // where the open D64 came from (projects embed a copy)
+d64_cache = [];        // per directory entry: saved state of that file (or -1)
 project_path = "";     // set by save / load: unpacks auto-save over it
 autosave_timer = 0;    // frames left to show [autosaving]
+
+// ---- Colour picker modal (opens from the viewer swatches) ----
+picker_active = false;
+picker_target = 0;     // 0 BG, 1 M1, 2 M2, 3 FG
+picker_x = 0;
+picker_y = 0;
+picker_cell = 44;      // size of one colour square
+picker_names = ["Black", "White", "Red", "Cyan", "Purple", "Green", "Blue", "Yellow",
+                "Orange", "Brown", "Light red", "Dark grey", "Grey", "Light green", "Light blue", "Light grey"];
 d64_tracks = 35;
 d64_disk_name = "";
 d64_files = [];         // { name, type, typename, track, sector, blocks }

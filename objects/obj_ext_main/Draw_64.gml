@@ -276,4 +276,9 @@ for (var _c2 = 0; _c2 < EXT_CLS_COUNT; _c2++) {
     draw_text(_lx + 160, _row_y, string(cls_counts[_c2]));
 }
 
+// ---- Colour picker modal (drawn last, over everything) ----
+if (picker_active) {
+    scr_ext_picker_draw();
+}
+
 draw_set_colour(c_white);

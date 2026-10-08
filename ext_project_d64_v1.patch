@@ -1,0 +1,480 @@
+diff --git a/objects/obj_ext_main/CleanUp_0.gml b/objects/obj_ext_main/CleanUp_0.gml
+index 688df98..e64df92 100644
+--- a/objects/obj_ext_main/CleanUp_0.gml
++++ b/objects/obj_ext_main/CleanUp_0.gml
+@@ -20,3 +20,4 @@ if (buffer_exists(gfx_buf)) {
+ if (surface_exists(gfx_surf)) {
+     surface_free(gfx_surf);
+ }
++scr_ext_cache_clear();
+diff --git a/objects/obj_ext_main/Create_0.gml b/objects/obj_ext_main/Create_0.gml
+index a6e1379..b50b7a8 100644
+--- a/objects/obj_ext_main/Create_0.gml
++++ b/objects/obj_ext_main/Create_0.gml
+@@ -36,7 +36,8 @@ verdict_text = "";
+ 
+ // ---- D64 state ----
+ d64_buf = -1;
+-d64_path = "";         // the open D64, remembered in project files
++d64_path = "";         // where the open D64 came from (projects embed a copy)
++d64_cache = [];        // per directory entry: saved state of that file (or -1)
+ project_path = "";     // set by save / load: unpacks auto-save over it
+ autosave_timer = 0;    // frames left to show [autosaving]
+ d64_tracks = 35;
+diff --git a/objects/obj_ext_main/Step_0.gml b/objects/obj_ext_main/Step_0.gml
+index d9f5406..87ae701 100644
+--- a/objects/obj_ext_main/Step_0.gml
++++ b/objects/obj_ext_main/Step_0.gml
+@@ -441,7 +441,7 @@ if (point_in_rectangle(_mx, _my, dir_x, dir_y, dir_x + dir_w - EXT_SB_W - 4, dir
+         var _frow = floor((_my - (dir_y + line_h)) / line_h);
+         var _idx = d64_scroll + _frow;
+         if (_frow >= 0 && _frow < dir_rows && _idx < _n_files) {
+-            scr_ext_d64_load_entry(_idx, _shift);
++            scr_ext_d64_load_entry(_idx, _shift, keyboard_check(vk_control));
+         }
+     }
+ }
+diff --git a/scripts/scr_ext_cpu/scr_ext_cpu.gml b/scripts/scr_ext_cpu/scr_ext_cpu.gml
+index 55fdaf8..0637a5c 100644
+--- a/scripts/scr_ext_cpu/scr_ext_cpu.gml
++++ b/scripts/scr_ext_cpu/scr_ext_cpu.gml
+@@ -1044,6 +1044,7 @@ function scr_ext_decrunch_finish(_result, _pc) {
+         return;
+     }
+     status_text = "Unpacked: start $" + scr_ext_hex(_start, 4) + " after " + string(cpu.steps) + " instructions (" + string(cpu.writes) + " bytes written, stage " + string(cpu.stage) + ").";
++    scr_ext_cache_store(d64_selected);
+     scr_ext_keep_unpacked();
+ }
+ 
+diff --git a/scripts/scr_ext_d64/scr_ext_d64.gml b/scripts/scr_ext_d64/scr_ext_d64.gml
+index 3fa9036..aadbb84 100644
+--- a/scripts/scr_ext_d64/scr_ext_d64.gml
++++ b/scripts/scr_ext_d64/scr_ext_d64.gml
+@@ -46,6 +46,7 @@ function scr_ext_d64_name(_offset, _max) {
+ /// Validates the image size and reads the directory into d64_files.
+ function scr_ext_d64_open(_size) {
+     d64_files = [];
++    scr_ext_cache_clear();
+     d64_disk_name = "";
+     d64_selected = -1;
+     d64_scroll = 0;
+@@ -99,6 +100,8 @@ function scr_ext_d64_open(_size) {
+         _guard++;
+     }
+ 
++    d64_cache = array_create(array_length(d64_files), -1);
++
+     // Quick per-file summary: load range, SYS address, packed or not
+     for (var _f = 0; _f < array_length(d64_files); _f++) {
+         var _df = d64_files[_f];
+@@ -160,9 +163,12 @@ function scr_ext_d64_extract(_track, _sector) {
+     return { buf : _out, len : _len };
+ }
+ 
+-/// @desc scr_ext_d64_load_entry(index, overlay)
++/// @desc scr_ext_d64_load_entry(index, overlay, fresh)
++/// Files already opened in this session / project come back from d64_cache in
++/// the state they were left in (unpacked, aligned, coloured). fresh = true
++/// ignores the cache and reads the file from the disk image again.
+ /// Extracts a directory entry and loads it into C64 memory as a PRG.
+-function scr_ext_d64_load_entry(_index, _overlay) {
++function scr_ext_d64_load_entry(_index, _overlay, _fresh) {
+     if (!buffer_exists(d64_buf)) {
+         return false;
+     }
+@@ -170,7 +176,23 @@ function scr_ext_d64_load_entry(_index, _overlay) {
+         return false;
+     }
+     cpu_active = false;
+-    project_path = "";
++
++    if (!_overlay) {
++        // Remember the file we're leaving, exactly as it is now
++        scr_ext_cache_store(d64_selected);
++        if (!_fresh) {
++            if (scr_ext_cache_has(_index)) {
++                scr_ext_cache_restore(_index);
++                d64_selected = _index;
++                status_text = "\"" + d64_files[_index].name + "\" restored as you left it (Ctrl+click reloads it from the disk).";
++                return true;
++            }
++        }
++        else {
++            scr_ext_cache_drop(_index);
++        }
++    }
++
+     var _f = d64_files[_index];
+     var _res = scr_ext_d64_extract(_f.track, _f.sector);
+ 
+diff --git a/scripts/scr_ext_loader/scr_ext_loader.gml b/scripts/scr_ext_loader/scr_ext_loader.gml
+index e75996e..94d0ab2 100644
+--- a/scripts/scr_ext_loader/scr_ext_loader.gml
++++ b/scripts/scr_ext_loader/scr_ext_loader.gml
+@@ -64,7 +64,7 @@ function scr_ext_load_path(_path, _overlay) {
+             }
+         }
+         if (_first >= 0) {
+-            scr_ext_d64_load_entry(_first, _overlay);
++            scr_ext_d64_load_entry(_first, _overlay, true);
+         }
+         else {
+             if (!_overlay) {
+diff --git a/scripts/scr_ext_project/scr_ext_project.gml b/scripts/scr_ext_project/scr_ext_project.gml
+index 5938ae1..b973518 100644
+--- a/scripts/scr_ext_project/scr_ext_project.gml
++++ b/scripts/scr_ext_project/scr_ext_project.gml
+@@ -1,10 +1,13 @@
+ // ============================================================================
+-// Project files (.c64x): the 64K memory image exactly as it is now - including
+-// anything unpacked - plus the viewer, colour, selection and cursor settings.
+-// Loading a project skips the unpack; classification is simply re-run.
++// Project files (.c64x)
++//   - the 64K memory image exactly as it is now (including anything unpacked)
++//   - viewer, colour, selection and cursor settings
++//   - version 2: a copy of the D64 itself, plus the saved state of every file
++//     opened from it (unpacked memory + its own view settings)
++// Loading a project skips every unpack; classification is simply re-run.
+ // ============================================================================
+ 
+-#macro EXT_PROJECT_VERSION 1
++#macro EXT_PROJECT_VERSION 2
+ 
+ /// @desc scr_ext_project_save(save_as)
+ /// Saves over the current project when there is one (unless save_as),
+@@ -64,9 +67,31 @@ function scr_ext_keep_unpacked() {
+ 
+ /// @desc scr_ext_project_write(path) - writes the project file, returns success
+ function scr_ext_project_write(_path) {
+-    var _d64 = "";
++    // The file on screen goes into the cache first, so its latest state is kept
++    scr_ext_cache_store(d64_selected);
++
++    var _d64_image = "";
++    var _cache_out = [];
+     if (buffer_exists(d64_buf)) {
+-        _d64 = d64_path;
++        _d64_image = buffer_base64_encode(d64_buf, 0, buffer_get_size(d64_buf));
++        for (var _i = 0; _i < array_length(d64_cache); _i++) {
++            var _e = d64_cache[_i];
++            if (is_struct(_e)) {
++                array_push(_cache_out, {
++                    mem            : buffer_base64_encode(_e.mem, 0, 65536),
++                    loaded         : buffer_base64_encode(_e.loaded, 0, 65536),
++                    segments       : _e.segments,
++                    manual_entries : _e.manual_entries,
++                    file_name      : _e.file_name,
++                    file_kind      : _e.file_kind,
++                    is_dump        : _e.is_dump,
++                    view           : _e.view
++                });
++            }
++            else {
++                array_push(_cache_out, 0);
++            }
++        }
+     }
+ 
+     var _data = {
+@@ -78,26 +103,12 @@ function scr_ext_project_write(_path) {
+         manual_entries : manual_entries,
+         mem            : buffer_base64_encode(mem_buf, 0, 65536),
+         loaded         : buffer_base64_encode(loaded_buf, 0, 65536),
+-        d64_path       : _d64,
+-        d64_selected   : d64_selected,
+-        cursor_addr    : cursor_addr,
+-        hex_top        : hex_top,
+-        dis_top        : dis_top,
+         map_shaded     : map_shaded,
+-        sel_active     : sel_active,
+-        sel_start      : sel_start,
+-        sel_end        : sel_end,
+-        gfx_mode       : gfx_mode,
+-        gfx_addr       : gfx_addr,
+-        gfx_char_cols  : gfx_char_cols,
+-        gfx_spr_cols   : gfx_spr_cols,
+-        gfx_follow     : gfx_follow,
+-        gfx_grid       : gfx_grid,
+-        gfx_col        : gfx_col,
+-        gfx_use_colour : gfx_use_colour,
+-        gfx_scr_addr   : gfx_scr_addr,
+-        gfx_col_addr   : gfx_col_addr,
+-        gfx_zoom_lock  : gfx_zoom_lock
++        view           : scr_ext_view_capture(),
++        d64_image      : _d64_image,
++        d64_path       : d64_path,
++        d64_selected   : d64_selected,
++        d64_cache      : _cache_out
+     };
+     var _json = json_stringify(_data);
+     var _buf = buffer_create(string_byte_length(_json) + 1, buffer_fixed, 1);
+@@ -149,29 +160,66 @@ function scr_ext_project_load(_path) {
+     manual_entries = _d.manual_entries;
+     is_dump = _d.is_dump;
+ 
+-    // ---- D64 listing (only if the disk image is still where it was) ----
++    // ---- D64 ----
+     if (buffer_exists(d64_buf)) {
+         buffer_delete(d64_buf);
+     }
+     d64_buf = -1;
+     d64_files = [];
++    scr_ext_cache_clear();
+     d64_disk_name = "";
+     d64_selected = -1;
+     d64_scroll = 0;
+     d64_path = "";
+-    if (_d.d64_path != "") {
+-        if (file_exists(_d.d64_path)) {
+-            var _img = buffer_load(_d.d64_path);
+-            if (buffer_exists(_img)) {
+-                d64_buf = _img;
+-                d64_path = _d.d64_path;
+-                if (scr_ext_d64_open(buffer_get_size(_img))) {
+-                    d64_selected = _d.d64_selected;
++    if (_d.version >= 2) {
++        // The project carries its own copy of the disk and every opened file's state
++        if (_d.d64_image != "") {
++            d64_buf = buffer_base64_decode(_d.d64_image);
++            d64_path = _d.d64_path;
++            if (scr_ext_d64_open(buffer_get_size(d64_buf))) {
++                d64_selected = _d.d64_selected;
++                var _n = array_length(_d.d64_cache);
++                if (_n > array_length(d64_cache)) {
++                    _n = array_length(d64_cache);
+                 }
+-                else {
+-                    buffer_delete(d64_buf);
+-                    d64_buf = -1;
+-                    d64_path = "";
++                for (var _i = 0; _i < _n; _i++) {
++                    var _e = _d.d64_cache[_i];
++                    if (is_struct(_e)) {
++                        d64_cache[_i] = {
++                            mem            : buffer_base64_decode(_e.mem),
++                            loaded         : buffer_base64_decode(_e.loaded),
++                            segments       : _e.segments,
++                            manual_entries : _e.manual_entries,
++                            file_name      : _e.file_name,
++                            file_kind      : _e.file_kind,
++                            is_dump        : _e.is_dump,
++                            view           : _e.view
++                        };
++                    }
++                }
++            }
++            else {
++                buffer_delete(d64_buf);
++                d64_buf = -1;
++            }
++        }
++    }
++    else {
++        // Version 1 only remembered where the D64 was
++        if (_d.d64_path != "") {
++            if (file_exists(_d.d64_path)) {
++                var _img = buffer_load(_d.d64_path);
++                if (buffer_exists(_img)) {
++                    d64_buf = _img;
++                    d64_path = _d.d64_path;
++                    if (scr_ext_d64_open(buffer_get_size(_img))) {
++                        d64_selected = _d.d64_selected;
++                    }
++                    else {
++                        buffer_delete(d64_buf);
++                        d64_buf = -1;
++                        d64_path = "";
++                    }
+                 }
+             }
+         }
+@@ -183,35 +231,165 @@ function scr_ext_project_load(_path) {
+ 
+     scr_ext_analyse();
+ 
+-    // ---- Viewer and colour settings ----
+-    gfx_mode = _d.gfx_mode;
+-    gfx_char_cols = _d.gfx_char_cols;
+-    gfx_spr_cols = _d.gfx_spr_cols;
+-    gfx_follow = _d.gfx_follow;
+-    gfx_grid = _d.gfx_grid;
+-    gfx_col = _d.gfx_col;
+-    gfx_use_colour = _d.gfx_use_colour;
+-    gfx_scr_addr = _d.gfx_scr_addr;
+-    gfx_col_addr = _d.gfx_col_addr;
+-    gfx_zoom_lock = _d.gfx_zoom_lock;
++    // ---- Viewer, colours, cursor, selection ----
++    if (_d.version >= 2) {
++        scr_ext_view_apply(_d.view);
++    }
++    else {
++        scr_ext_view_apply({
++            gfx_mode       : _d.gfx_mode,
++            gfx_addr       : _d.gfx_addr,
++            gfx_char_cols  : _d.gfx_char_cols,
++            gfx_spr_cols   : _d.gfx_spr_cols,
++            gfx_follow     : _d.gfx_follow,
++            gfx_grid       : _d.gfx_grid,
++            gfx_col        : _d.gfx_col,
++            gfx_use_colour : _d.gfx_use_colour,
++            gfx_scr_addr   : _d.gfx_scr_addr,
++            gfx_col_addr   : _d.gfx_col_addr,
++            gfx_zoom_lock  : _d.gfx_zoom_lock,
++            cursor_addr    : _d.cursor_addr,
++            hex_top        : _d.hex_top,
++            dis_top        : _d.dis_top,
++            sel_active     : _d.sel_active,
++            sel_start      : _d.sel_start,
++            sel_end        : _d.sel_end
++        });
++    }
++    map_shaded = _d.map_shaded;
++    map_dirty = true;
++
++    project_path = _path;
++    status_text = "Project loaded: " + filename_name(_path);
++    return true;
++}
++
++// ---------------------------------------------------------------------------
++// View state (what a file looks like on screen) and the per-file cache
++// ---------------------------------------------------------------------------
++
++/// @desc scr_ext_view_capture() - viewer, colours, cursor and selection as a struct
++function scr_ext_view_capture() {
++    return {
++        gfx_mode       : gfx_mode,
++        gfx_addr       : gfx_addr,
++        gfx_char_cols  : gfx_char_cols,
++        gfx_spr_cols   : gfx_spr_cols,
++        gfx_follow     : gfx_follow,
++        gfx_grid       : gfx_grid,
++        gfx_col        : [gfx_col[0], gfx_col[1], gfx_col[2], gfx_col[3]],
++        gfx_use_colour : gfx_use_colour,
++        gfx_scr_addr   : gfx_scr_addr,
++        gfx_col_addr   : gfx_col_addr,
++        gfx_zoom_lock  : gfx_zoom_lock,
++        cursor_addr    : cursor_addr,
++        hex_top        : hex_top,
++        dis_top        : dis_top,
++        sel_active     : sel_active,
++        sel_start      : sel_start,
++        sel_end        : sel_end
++    };
++}
++
++/// @desc scr_ext_view_apply(view)
++function scr_ext_view_apply(_v) {
++    gfx_mode = _v.gfx_mode;
++    gfx_char_cols = _v.gfx_char_cols;
++    gfx_spr_cols = _v.gfx_spr_cols;
++    gfx_follow = _v.gfx_follow;
++    gfx_grid = _v.gfx_grid;
++    gfx_col = [_v.gfx_col[0], _v.gfx_col[1], _v.gfx_col[2], _v.gfx_col[3]];
++    gfx_use_colour = _v.gfx_use_colour;
++    gfx_scr_addr = _v.gfx_scr_addr;
++    gfx_col_addr = _v.gfx_col_addr;
++    gfx_zoom_lock = _v.gfx_zoom_lock;
+     scr_ext_gfx_setup();
+-    gfx_addr = _d.gfx_addr;
++    gfx_addr = _v.gfx_addr;
+     gfx_phase = gfx_addr mod gfx_row_bytes;
+     gfx_dirty = true;
+ 
+-    // ---- Cursor, views, selection ----
+-    cursor_addr = _d.cursor_addr;
+-    hex_top = _d.hex_top;
++    cursor_addr = _v.cursor_addr;
++    hex_top = _v.hex_top;
+     scr_ext_clamp_hex_top();
+-    dis_top = _d.dis_top;
+-    map_shaded = _d.map_shaded;
+-    sel_active = _d.sel_active;
+-    sel_start = _d.sel_start;
+-    sel_end = _d.sel_end;
++    dis_top = _v.dis_top;
++    sel_active = _v.sel_active;
++    sel_start = _v.sel_start;
++    sel_end = _v.sel_end;
+     sel_dragging = false;
+-    map_dirty = true;
++}
+ 
+-    project_path = _path;
+-    status_text = "Project loaded: " + filename_name(_path);
+-    return true;
++/// @desc scr_ext_cache_has(index)
++function scr_ext_cache_has(_index) {
++    if (_index < 0 || _index >= array_length(d64_cache)) {
++        return false;
++    }
++    return is_struct(d64_cache[_index]);
++}
++
++/// @desc scr_ext_cache_drop(index) - forgets one file's saved state
++function scr_ext_cache_drop(_index) {
++    if (!scr_ext_cache_has(_index)) {
++        return;
++    }
++    var _e = d64_cache[_index];
++    buffer_delete(_e.mem);
++    buffer_delete(_e.loaded);
++    d64_cache[_index] = -1;
++}
++
++/// @desc scr_ext_cache_clear() - forgets every file's saved state
++function scr_ext_cache_clear() {
++    for (var _i = 0; _i < array_length(d64_cache); _i++) {
++        scr_ext_cache_drop(_i);
++    }
++    d64_cache = [];
++}
++
++/// @desc scr_ext_cache_store(index)
++/// Saves what is in memory now as the state of D64 entry 'index'.
++function scr_ext_cache_store(_index) {
++    if (!buffer_exists(d64_buf)) {
++        return;
++    }
++    if (_index < 0 || _index >= array_length(d64_cache)) {
++        return;
++    }
++    if (cpu_active) {
++        return;     // half-unpacked: not worth keeping
++    }
++    if (array_length(segments) == 0) {
++        return;
++    }
++    scr_ext_cache_drop(_index);
++    var _mem = buffer_create(65536, buffer_fixed, 1);
++    var _loaded = buffer_create(65536, buffer_fixed, 1);
++    buffer_copy(mem_buf, 0, 65536, _mem, 0);
++    buffer_copy(loaded_buf, 0, 65536, _loaded, 0);
++    d64_cache[_index] = {
++        mem            : _mem,
++        loaded         : _loaded,
++        segments       : variable_clone(segments),
++        manual_entries : variable_clone(manual_entries),
++        file_name      : file_name,
++        file_kind      : file_kind,
++        is_dump        : is_dump,
++        view           : scr_ext_view_capture()
++    };
++}
++
++/// @desc scr_ext_cache_restore(index)
++/// Puts a saved file back on screen: memory, entry points, view - no unpacking.
++function scr_ext_cache_restore(_index) {
++    var _e = d64_cache[_index];
++    scr_ext_reset_memory();
++    buffer_copy(_e.mem, 0, 65536, mem_buf, 0);
++    buffer_copy(_e.loaded, 0, 65536, loaded_buf, 0);
++    segments = variable_clone(_e.segments);
++    manual_entries = variable_clone(_e.manual_entries);
++    file_name = _e.file_name;
++    file_kind = _e.file_kind;
++    is_dump = _e.is_dump;
++    scr_ext_analyse();
++    scr_ext_view_apply(_e.view);
++    map_dirty = true;
+ }

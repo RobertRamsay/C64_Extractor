@@ -1180,3 +1180,99 @@ function scr_ext_gfx_export_png() {
     surface_save(gfx_surf, _path);
     status_text = "Saved " + filename_name(_path) + " (" + string(gfx_img_w) + " x " + string(gfx_img_h) + ").";
 }
+
+// ---------------------------------------------------------------------------
+// Colour picker modal
+// ---------------------------------------------------------------------------
+
+/// @desc scr_ext_picker_open(swatch) - opens the 16-colour picker under a swatch
+function scr_ext_picker_open(_target) {
+    picker_target = _target;
+    var _w = picker_cell * 4 + 24;
+    var _h = picker_cell * 4 + 60;
+    picker_x = gfx_swatch_x + _target * 46;
+    picker_y = gfx_swatch_y + 28;
+    if (picker_x + _w > gui_w - 8) {
+        picker_x = gui_w - 8 - _w;
+    }
+    if (picker_y + _h > gui_h - 8) {
+        picker_y = gui_h - 8 - _h;
+    }
+    picker_active = true;
+}
+
+/// @desc scr_ext_picker_hit(mx, my) - C64 colour under the mouse, or -1
+function scr_ext_picker_hit(_mx, _my) {
+    var _gx = picker_x + 12;
+    var _gy = picker_y + 30;
+    for (var _i = 0; _i < 16; _i++) {
+        var _cx = _gx + (_i mod 4) * picker_cell;
+        var _cy = _gy + (_i div 4) * picker_cell;
+        if (point_in_rectangle(_mx, _my, _cx, _cy, _cx + picker_cell - 4, _cy + picker_cell - 4)) {
+            return _i;
+        }
+    }
+    return -1;
+}
+
+/// @desc scr_ext_picker_draw()
+function scr_ext_picker_draw() {
+    var _w = picker_cell * 4 + 24;
+    var _h = picker_cell * 4 + 60;
+
+    // Dim everything behind it
+    draw_set_alpha(0.55);
+    draw_set_colour(c_black);
+    draw_rectangle(0, 0, gui_w, gui_h, false);
+    draw_set_alpha(1);
+
+    draw_set_colour(col_panel);
+    draw_rectangle(picker_x, picker_y, picker_x + _w, picker_y + _h, false);
+    draw_set_colour(col_title);
+    draw_rectangle(picker_x, picker_y, picker_x + _w, picker_y + _h, true);
+    var _names = ["BG", "M1", "M2", "FG"];
+    draw_text(picker_x + 12, picker_y + 8, "Pick " + _names[picker_target] + " colour   (Esc cancels)");
+
+    var _mx = device_mouse_x_to_gui(0);
+    var _my = device_mouse_y_to_gui(0);
+    var _hover = scr_ext_picker_hit(_mx, _my);
+    var _gx = picker_x + 12;
+    var _gy = picker_y + 30;
+    for (var _i = 0; _i < 16; _i++) {
+        var _cx = _gx + (_i mod 4) * picker_cell;
+        var _cy = _gy + (_i div 4) * picker_cell;
+        var _rgb = c64_pal[_i];
+        draw_set_colour(make_colour_rgb(_rgb[0], _rgb[1], _rgb[2]));
+        draw_rectangle(_cx, _cy, _cx + picker_cell - 4, _cy + picker_cell - 4, false);
+        draw_set_colour(col_border);
+        draw_rectangle(_cx, _cy, _cx + picker_cell - 4, _cy + picker_cell - 4, true);
+        if (_i == gfx_col[picker_target]) {
+            draw_set_colour(c_white);
+            draw_rectangle(_cx - 2, _cy - 2, _cx + picker_cell - 2, _cy + picker_cell - 2, true);
+        }
+        if (_i == _hover) {
+            draw_set_colour(col_gfx_range);
+            draw_rectangle(_cx - 3, _cy - 3, _cx + picker_cell - 1, _cy + picker_cell - 1, true);
+            draw_rectangle(_cx - 2, _cy - 2, _cx + picker_cell - 2, _cy + picker_cell - 2, true);
+        }
+        // Index number, in black or white depending on the colour behind it
+        var _lum = _rgb[0] * 0.3 + _rgb[1] * 0.59 + _rgb[2] * 0.11;
+        if (_lum > 110) {
+            draw_set_colour(c_black);
+        }
+        else {
+            draw_set_colour(c_white);
+        }
+        draw_text(_cx + 4, _cy + 3, string(_i));
+    }
+
+    draw_set_colour(col_text);
+    var _label = "";
+    if (_hover >= 0) {
+        _label = string(_hover) + "  " + picker_names[_hover];
+    }
+    else {
+        _label = "current: " + string(gfx_col[picker_target]) + "  " + picker_names[gfx_col[picker_target]];
+    }
+    draw_text(picker_x + 12, _gy + picker_cell * 4 + 4, _label);
+}

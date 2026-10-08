@@ -20,6 +20,27 @@ if (cpu_active) {
     }
 }
 
+// ---- Colour picker modal: takes every click until a colour is picked ----
+if (picker_active) {
+    var _pmx = device_mouse_x_to_gui(0);
+    var _pmy = device_mouse_y_to_gui(0);
+    if (mouse_check_button_pressed(mb_left)) {
+        var _pick = scr_ext_picker_hit(_pmx, _pmy);
+        if (_pick >= 0) {
+            gfx_col[picker_target] = _pick;
+            gfx_dirty = true;
+            picker_active = false;
+            var _slot_names = ["BG", "M1", "M2", "FG"];
+            status_text = "Viewer " + _slot_names[picker_target] + " colour: " + string(_pick) + " (" + picker_names[_pick] + ")";
+        }
+    }
+    if (keyboard_check_pressed(vk_escape)) {
+        picker_active = false;
+    }
+    io_clear();
+    exit;
+}
+
 var _mx = device_mouse_x_to_gui(0);
 var _my = device_mouse_y_to_gui(0);
 var _shift = keyboard_check(vk_shift);
@@ -131,13 +152,7 @@ if (gfx_repeat_index >= 0) {
 if (_lmb_pressed) {
     var _sw = scr_ext_gfx_swatch_hit(_mx, _my);
     if (_sw >= 0) {
-        if (_shift) {
-            gfx_col[_sw] = (gfx_col[_sw] + 15) mod 16;
-        }
-        else {
-            gfx_col[_sw] = (gfx_col[_sw] + 1) mod 16;
-        }
-        gfx_dirty = true;
+        scr_ext_picker_open(_sw);
         _lmb_pressed = false;
     }
 }
@@ -441,7 +456,7 @@ if (point_in_rectangle(_mx, _my, dir_x, dir_y, dir_x + dir_w - EXT_SB_W - 4, dir
         var _frow = floor((_my - (dir_y + line_h)) / line_h);
         var _idx = d64_scroll + _frow;
         if (_frow >= 0 && _frow < dir_rows && _idx < _n_files) {
-            scr_ext_d64_load_entry(_idx, _shift);
+            scr_ext_d64_load_entry(_idx, _shift, keyboard_check(vk_control));
         }
     }
 }

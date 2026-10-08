@@ -1044,6 +1044,7 @@ function scr_ext_decrunch_finish(_result, _pc) {
         return;
     }
     status_text = "Unpacked: start $" + scr_ext_hex(_start, 4) + " after " + string(cpu.steps) + " instructions (" + string(cpu.writes) + " bytes written, stage " + string(cpu.stage) + ").";
+    scr_ext_cache_store(d64_selected);
     scr_ext_keep_unpacked();
 }
 
