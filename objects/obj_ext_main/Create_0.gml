@@ -52,6 +52,7 @@ vic_clues = [];          // { addr, len, kind, mode, why, scr, conf }
 clue_base_conf = 100;    // confidence given to clues from the write being processed
 findings = [];           // { addr, len, kind, mode, conf, why, scr, init, play } best first
 bitmap_hits = [];        // { addr, mc, ratio, conf } from scr_ext_detect_bitmaps
+user_marks = [];         // views confirmed with Mark as found: { addr, len, mode, cols, colours, use_colour, scr, col }
 summary_open = false;    // analysis summary window
 summary_x = 0;
 summary_y = 0;

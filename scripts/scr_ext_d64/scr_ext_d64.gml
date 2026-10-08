@@ -200,6 +200,7 @@ function scr_ext_d64_load_entry(_index, _overlay, _fresh) {
     if (!_overlay) {
         scr_ext_reset_memory();
         manual_entries = [];
+        user_marks = [];
     }
     var _ok = scr_ext_load_prg_bytes(_res.buf, 0, _res.len, _f.name);
     buffer_delete(_res.buf);

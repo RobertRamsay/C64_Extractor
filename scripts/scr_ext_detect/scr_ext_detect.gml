@@ -338,6 +338,11 @@ function scr_ext_jump_clue() {
 function scr_ext_jump_finding(_index) {
     clue_index = _index;
     var _c = findings[_index];
+    if (_c.mark >= 0) {
+        scr_ext_mark_apply(user_marks[_c.mark]);
+        status_text = "Finding " + string(_index + 1) + "/" + string(array_length(findings)) + ": " + scr_ext_finding_text(_c);
+        return;
+    }
     if (_c.mode >= 0) {
         gfx_mode = _c.mode;
         gfx_zoom_lock = 0;
@@ -415,6 +420,13 @@ function scr_ext_build_findings() {
     findings = [];
     clue_index = -1;
 
+    // ---- Your marks: confirmed by eye, always first ----
+    for (var _m = 0; _m < array_length(user_marks); _m++) {
+        var _um = user_marks[_m];
+        array_push(findings, { addr : _um.addr, len : _um.len, kind : scr_ext_mark_kind(_um.mode), mode : _um.mode, conf : 100,
+            why : "set by you - exact view, columns and colours", scr : _um.scr, init : -1, play : -1, mark : _m });
+    }
+
     // ---- VIC clues: the code says where these are ----
     for (var _i = 0; _i < array_length(vic_clues); _i++) {
         var _c = vic_clues[_i];
@@ -431,7 +443,7 @@ function scr_ext_build_findings() {
         else {
             _conf = round(_conf * 0.85);
         }
-        array_push(findings, { addr : _c.addr, len : _c.len, kind : _c.kind, mode : _c.mode, conf : _conf, why : _why, scr : _c.scr, init : -1, play : -1 });
+        array_push(findings, { addr : _c.addr, len : _c.len, kind : _c.kind, mode : _c.mode, conf : _conf, why : _why, scr : _c.scr, init : -1, play : -1, mark : -1 });
     }
 
     // ---- Bitmaps found by their layout ----
@@ -451,7 +463,7 @@ function scr_ext_build_findings() {
                 _mname = "multicolour";
             }
             array_push(findings, { addr : _bh.addr, len : 8000, kind : "Bitmap", mode : _bmode, conf : _bh.conf,
-                why : _mname + " bitmap layout - cell rows line up (" + string(round(_bh.ratio * 100) / 100) + ")", scr : -1, init : -1, play : -1 });
+                why : _mname + " bitmap layout - cell rows line up (" + string(round(_bh.ratio * 100) / 100) + ")", scr : -1, init : -1, play : -1, mark : -1 });
         }
     }
 
@@ -506,14 +518,14 @@ function scr_ext_build_findings() {
                 if (_gc > 70) {
                     _gc = 70;
                 }
-                array_push(findings, { addr : _a, len : _len, kind : _kind, mode : _mode, conf : _gc, why : "shape only, no code reference", scr : -1, init : -1, play : -1 });
+                array_push(findings, { addr : _a, len : _len, kind : _kind, mode : _mode, conf : _gc, why : "shape only, no code reference", scr : -1, init : -1, play : -1, mark : -1 });
             }
         }
         if (_cls == EXT_CLS_TEXT && _len >= 24) {
-            array_push(findings, { addr : _a, len : _len, kind : "Text", mode : -1, conf : 80, why : string(_len) + " characters", scr : -1, init : -1, play : -1 });
+            array_push(findings, { addr : _a, len : _len, kind : "Text", mode : -1, conf : 80, why : string(_len) + " characters", scr : -1, init : -1, play : -1, mark : -1 });
         }
         if (_cls == EXT_CLS_PACKED && _len >= 1024) {
-            array_push(findings, { addr : _a, len : _len, kind : "Packed data", mode : -1, conf : 90, why : "press U to unpack", scr : -1, init : -1, play : -1 });
+            array_push(findings, { addr : _a, len : _len, kind : "Packed data", mode : -1, conf : 90, why : "press U to unpack", scr : -1, init : -1, play : -1, mark : -1 });
         }
         _a = _b;
     }
@@ -893,7 +905,7 @@ function scr_ext_detect_sid() {
             if (_conf > 100) {
                 _conf = 100;
             }
-            array_push(findings, { addr : _start, len : _end - _start, kind : _kind, mode : -1, conf : _conf, why : _why, scr : -1, init : _init, play : _play });
+            array_push(findings, { addr : _start, len : _end - _start, kind : _kind, mode : -1, conf : _conf, why : _why, scr : -1, init : _init, play : _play, mark : -1 });
         }
         _i = _j + 1;
     }
@@ -1098,5 +1110,126 @@ function scr_ext_detect_bitmaps() {
         array_push(bitmap_hits, { addr : _base, mc : _mc, ratio : _ratio, conf : _conf });
         scr_ext_mark_unknown(_base, 8000, EXT_CLS_GFX);
         _i = _j + 1;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Your marks: views you have lined up by eye and confirmed with Mark as found
+// ---------------------------------------------------------------------------
+
+/// @desc scr_ext_mark_kind(mode) - finding name for a mark
+function scr_ext_mark_kind(_mode) {
+    switch (_mode) {
+        case EXT_GFX_BMP_HR:
+        case EXT_GFX_BMP_MC:
+            return "Bitmap (yours)";
+        case EXT_GFX_SPR_HR:
+        case EXT_GFX_SPR_MC:
+            return "Sprites (yours)";
+    }
+    return "Charset (yours)";
+}
+
+/// @desc scr_ext_mark_toggle()
+/// Mark as found [Y]: records the viewer exactly as it is now. Pressing it again
+/// with the viewer on the same start removes that mark.
+function scr_ext_mark_toggle() {
+    for (var _i = 0; _i < array_length(user_marks); _i++) {
+        if (user_marks[_i].addr == gfx_addr && user_marks[_i].mode == gfx_mode) {
+            array_delete(user_marks, _i, 1);
+            scr_ext_analyse();
+            status_text = "Mark removed at $" + scr_ext_hex(gfx_addr, 4) + ".";
+            return;
+        }
+    }
+    // Range: from the viewer start to the end of the selection, else the whole view
+    var _len = gfx_screen_bytes;
+    if (scr_ext_gfx_is_bitmap()) {
+        _len = 8000;
+    }
+    if (sel_active && sel_end > gfx_addr) {
+        _len = sel_end - gfx_addr + 1;
+    }
+    if (gfx_addr + _len > 65536) {
+        _len = 65536 - gfx_addr;
+    }
+    var _cols = gfx_char_cols;
+    if (scr_ext_gfx_is_sprite()) {
+        _cols = gfx_spr_cols;
+    }
+    array_push(user_marks, {
+        addr       : gfx_addr,
+        len        : _len,
+        mode       : gfx_mode,
+        cols       : _cols,
+        colours    : [gfx_col[0], gfx_col[1], gfx_col[2], gfx_col[3]],
+        use_colour : gfx_use_colour,
+        scr        : gfx_scr_addr,
+        col        : gfx_col_addr
+    });
+    var _keep_addr = gfx_addr;
+    var _keep_mode = gfx_mode;
+    scr_ext_analyse();
+    gfx_addr = _keep_addr;
+    gfx_mode = _keep_mode;
+    gfx_dirty = true;
+
+    // Keep the disk findings list in step without a rescan
+    if (buffer_exists(d64_buf) && d64_selected >= 0 && array_length(disk_results) > 0) {
+        array_push(disk_results, {
+            file  : d64_selected,
+            fname : d64_files[d64_selected].name,
+            cat   : scr_ext_disk_category({ kind : scr_ext_mark_kind(gfx_mode), mode : gfx_mode }),
+            kind  : scr_ext_mark_kind(gfx_mode),
+            addr  : _keep_addr,
+            len   : _len,
+            mode  : gfx_mode,
+            conf  : 100,
+            why   : "set by you"
+        });
+        array_sort(disk_results, function(_x, _y) {
+            return _y.conf - _x.conf;
+        });
+    }
+    status_text = "Marked " + scr_ext_mark_kind(gfx_mode) + " at $" + scr_ext_hex(_keep_addr, 4) + "-$" + scr_ext_hex(_keep_addr + _len - 1, 4) + " (100%). Y again here removes it.";
+}
+
+/// @desc scr_ext_mark_apply(mark) - puts the viewer back exactly as marked
+function scr_ext_mark_apply(_m) {
+    gfx_mode = _m.mode;
+    if (_m.mode == EXT_GFX_SPR_HR || _m.mode == EXT_GFX_SPR_MC) {
+        gfx_spr_cols = _m.cols;
+    }
+    else if (_m.mode == EXT_GFX_CHAR_HR || _m.mode == EXT_GFX_CHAR_MC) {
+        gfx_char_cols = _m.cols;
+    }
+    gfx_col = [_m.colours[0], _m.colours[1], _m.colours[2], _m.colours[3]];
+    gfx_use_colour = _m.use_colour;
+    gfx_scr_addr = _m.scr;
+    gfx_col_addr = _m.col;
+    gfx_zoom_lock = 0;
+    scr_ext_gfx_setup();
+    gfx_addr = _m.addr;
+    gfx_phase = gfx_addr mod gfx_row_bytes;
+    gfx_dirty = true;
+    cursor_addr = _m.addr;
+    scr_ext_views_to(_m.addr);
+}
+
+/// @desc scr_ext_marks_force()
+/// Marked ranges are graphics, whatever the code guesses said (run during analysis).
+function scr_ext_marks_force() {
+    for (var _m = 0; _m < array_length(user_marks); _m++) {
+        var _um = user_marks[_m];
+        for (var _i = 0; _i < _um.len; _i++) {
+            var _a = _um.addr + _i;
+            if (_a > 0xFFFF) {
+                break;
+            }
+            if (buffer_peek(loaded_buf, _a, buffer_u8) == 1) {
+                buffer_poke(cls_buf, _a, buffer_u8, EXT_CLS_GFX);
+                buffer_poke(istart_buf, _a, buffer_u8, 0);
+            }
+        }
     }
 }

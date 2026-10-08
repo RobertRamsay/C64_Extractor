@@ -99,9 +99,9 @@ function scr_ext_gfx_build_buttons() {
     // Row 4: nudge the start address (hold to repeat) and auto-align
     _bx = gfx_x;
     _by = gfx_y + 84;
-    var _labels4  = ["-1 cell", "-1 byte", "+1 byte", "+1 cell", "Align [L]", "Export sprites", "Export PNG"];
-    var _actions4 = ["gnudge",  "gnudge",  "gnudge",  "gnudge",  "galign",    "gexpspr",        "gexppng"];
-    var _args4    = [-2,        -1,        1,         2,         0,           0,                0];
+    var _labels4  = ["-1 cell", "-1 byte", "+1 byte", "+1 cell", "Align [L]", "Mark as found [Y]", "Export sprites", "Export PNG"];
+    var _actions4 = ["gnudge",  "gnudge",  "gnudge",  "gnudge",  "galign",    "gmark",             "gexpspr",        "gexppng"];
+    var _args4    = [-2,        -1,        1,         2,         0,           0,                   0,                0];
     for (var _i = 0; _i < array_length(_labels4); _i++) {
         var _w4 = string_width(_labels4[_i]) + 18;
         array_push(gfx_buttons, { bx : _bx, by : _by, bw : _w4, bh : 22, label : _labels4[_i], action : _actions4[_i], arg : _args4[_i] });
@@ -325,6 +325,10 @@ function scr_ext_gfx_do_button(_b, _shift) {
             scr_ext_gfx_export_png();
             break;
 
+        case "gmark":
+            scr_ext_mark_toggle();
+            break;
+
         case "ggrid":
             if (gfx_grid) {
                 gfx_grid = false;
@@ -534,6 +538,13 @@ function scr_ext_gfx_draw() {
         }
         if (_b.action == "ggrid" && gfx_grid) {
             _active = true;
+        }
+        if (_b.action == "gmark") {
+            for (var _mk = 0; _mk < array_length(user_marks); _mk++) {
+                if (user_marks[_mk].addr == gfx_addr && user_marks[_mk].mode == gfx_mode) {
+                    _active = true;
+                }
+            }
         }
         scr_ext_draw_button(_b, _active);
     }

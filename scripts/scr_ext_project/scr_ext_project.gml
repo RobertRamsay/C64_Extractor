@@ -7,7 +7,7 @@
 // Loading a project skips every unpack; classification is simply re-run.
 // ============================================================================
 
-#macro EXT_PROJECT_VERSION 3
+#macro EXT_PROJECT_VERSION 4
 
 /// @desc scr_ext_project_save(save_as)
 /// Saves over the current project when there is one (unless save_as),
@@ -85,7 +85,8 @@ function scr_ext_project_write(_path) {
                     file_name      : _e.file_name,
                     file_kind      : _e.file_kind,
                     is_dump        : _e.is_dump,
-                    view           : _e.view
+                    view           : _e.view,
+                    user_marks     : _e.user_marks
                 });
             }
             else {
@@ -104,6 +105,7 @@ function scr_ext_project_write(_path) {
         mem            : buffer_base64_encode(mem_buf, 0, 65536),
         loaded         : buffer_base64_encode(loaded_buf, 0, 65536),
         map_shaded     : map_shaded,
+        user_marks     : user_marks,
         auto_unpack    : auto_unpack,
         d64_scroll     : d64_scroll,
         view           : scr_ext_view_capture(),
@@ -199,8 +201,12 @@ function scr_ext_project_load(_path) {
                             file_name      : _e.file_name,
                             file_kind      : _e.file_kind,
                             is_dump        : _e.is_dump,
-                            view           : _e.view
+                            view           : _e.view,
+                            user_marks     : []
                         };
+                        if (_d.version >= 4) {
+                            d64_cache[_i].user_marks = _e.user_marks;
+                        }
                     }
                 }
             }
@@ -234,6 +240,10 @@ function scr_ext_project_load(_path) {
     file_path = _path;
     file_name = _d.file_name;
     file_kind = _d.file_kind;
+    user_marks = [];
+    if (_d.version >= 4) {
+        user_marks = _d.user_marks;
+    }
 
     scr_ext_analyse();
 
@@ -392,7 +402,8 @@ function scr_ext_cache_store(_index) {
         file_name      : file_name,
         file_kind      : file_kind,
         is_dump        : is_dump,
-        view           : scr_ext_view_capture()
+        view           : scr_ext_view_capture(),
+        user_marks     : variable_clone(user_marks)
     };
 }
 
@@ -408,6 +419,7 @@ function scr_ext_cache_restore(_index) {
     file_name = _e.file_name;
     file_kind = _e.file_kind;
     is_dump = _e.is_dump;
+    user_marks = variable_clone(_e.user_marks);
     scr_ext_analyse();
     scr_ext_view_apply(_e.view);
     map_dirty = true;

@@ -91,6 +91,7 @@ function scr_ext_load_path(_path, _overlay) {
     if (!_overlay) {
         scr_ext_reset_memory();
         manual_entries = [];
+        user_marks = [];
     }
 
     var _ok = false;

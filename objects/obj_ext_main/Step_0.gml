@@ -345,6 +345,9 @@ if (keyboard_check_pressed(ord("U"))) {
 if (keyboard_check_pressed(ord("P"))) {
     scr_ext_sid_toggle(_shift && !keyboard_check(vk_control), keyboard_check(vk_control));
 }
+if (keyboard_check_pressed(ord("Y"))) {
+    scr_ext_mark_toggle();
+}
 if (keyboard_check_pressed(ord("J"))) {
     scr_ext_jump_clue();
 }

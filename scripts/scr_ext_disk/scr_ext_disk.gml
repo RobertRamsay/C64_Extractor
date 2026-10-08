@@ -17,13 +17,13 @@ function scr_ext_disk_category(_f) {
     if (string_pos("SID", _f.kind) == 1) {
         return EXT_DISK_SID;
     }
-    if (_f.kind == "Bitmap" || _f.mode == EXT_GFX_BMP_HR || _f.mode == EXT_GFX_BMP_MC) {
+    if (string_pos("Bitmap", _f.kind) == 1 || _f.mode == EXT_GFX_BMP_HR || _f.mode == EXT_GFX_BMP_MC) {
         return EXT_DISK_BITMAP;
     }
-    if (_f.kind == "Charset" || _f.kind == "Graphics (chars?)") {
+    if (string_pos("Charset", _f.kind) == 1 || _f.kind == "Graphics (chars?)") {
         return EXT_DISK_CHARSET;
     }
-    if (_f.kind == "Sprite" || _f.kind == "Graphics (sprites?)") {
+    if (string_pos("Sprite", _f.kind) == 1 || _f.kind == "Graphics (sprites?)") {
         return EXT_DISK_SPRITE;
     }
     return 0;

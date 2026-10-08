@@ -31,6 +31,7 @@ function scr_ext_analyse() {
 
     // Data detection on everything the tracer didn't claim
     scr_ext_apply_vic_clues(scr_ext_find_vic_writes());
+    scr_ext_marks_force();
     scr_ext_detect_packed();
     scr_ext_detect_text();
     scr_ext_detect_bitmaps();
