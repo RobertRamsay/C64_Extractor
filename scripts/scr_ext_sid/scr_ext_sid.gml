@@ -50,19 +50,23 @@ function scr_ext_sid_call(_addr, _a, _budget) {
 }
 
 /// @desc scr_ext_sid_start(init, play, song)
-function scr_ext_sid_start(_init, _play, _song) {
+function scr_ext_sid_start(_init, _play, _song, _src = -1) {
     scr_ext_sid_stop();
+    disk_sid_key = "";      // a disk row sets it again after a successful start
+    if (_src == -1) {
+        _src = mem_buf;
+    }
     if (!sid_ok) {
-        status_text = "SID playback needs the sid64 (reSID) extension, which isn't available on this platform.";
+        scr_ext_sid_msg("SID playback needs the sid64 (reSID) extension, which isn't available on this platform.");
         return false;
     }
     if (cpu_active) {
-        status_text = "Wait for the unpack to finish before playing.";
+        scr_ext_sid_msg("Wait for the unpack to finish before playing.");
         return false;
     }
 
     // The tune runs on its own copy of memory, so playing never changes the analysis
-    buffer_copy(mem_buf, 0, 65536, cpu_mem, 0);
+    buffer_copy(_src, 0, 65536, cpu_mem, 0);
     buffer_fill(cpu_w, 0, buffer_u8, 0, 65536);
     buffer_fill(cpu_execd, 0, buffer_u8, 0, 65536);
     buffer_fill(sid_shadow, 0, buffer_u8, 0, 32);
@@ -72,7 +76,7 @@ function scr_ext_sid_start(_init, _play, _song) {
 
     var _r = scr_ext_sid_call(_init, _song, EXT_SID_INIT_STEPS);
     if (_r != "return") {
-        status_text = "SID init at $" + scr_ext_hex(_init, 4) + " didn't return (" + _r + " at $" + scr_ext_hex(cpu.pc, 4) + ").";
+        scr_ext_sid_msg("SID init at $" + scr_ext_hex(_init, 4) + " didn't return (" + _r + " at $" + scr_ext_hex(cpu.pc, 4) + ").");
         return false;
     }
 
@@ -109,7 +113,7 @@ function scr_ext_sid_start(_init, _play, _song) {
     if (sid_model == 1) {
         _model_name = "8580";
     }
-    status_text = "Playing SID: init $" + scr_ext_hex(_init, 4) + "  play $" + scr_ext_hex(_play, 4) + "  tune " + string(_song + 1) + "  (" + _model_name + ")   P stop, Shift+P next tune, Ctrl+P 6581/8580";
+    scr_ext_sid_msg("Playing SID: init $" + scr_ext_hex(_init, 4) + "  play $" + scr_ext_hex(_play, 4) + "  tune " + string(_song + 1) + "  (" + _model_name + ")   P stop, Shift+P next tune, Ctrl+P 6581/8580");
     return true;
 }
 
@@ -118,7 +122,7 @@ function scr_ext_sid_chunk() {
     for (var _f = 0; _f < 4; _f++) {
         var _r = scr_ext_sid_call(sid_play_addr, 0, EXT_SID_PLAY_STEPS);
         if (_r != "return") {
-            status_text = "SID playback stopped: play $" + scr_ext_hex(sid_play_addr, 4) + " ended with " + _r + " at $" + scr_ext_hex(cpu.pc, 4) + ".";
+            scr_ext_sid_msg("SID playback stopped: play $" + scr_ext_hex(sid_play_addr, 4) + " ended with " + _r + " at $" + scr_ext_hex(cpu.pc, 4) + ".");
             scr_ext_sid_stop();
             return false;
         }
@@ -130,7 +134,7 @@ function scr_ext_sid_chunk() {
     sid_ring_i = (sid_ring_i + 1) mod EXT_SID_RING;
     var _got = sid64_render_log(buffer_get_address(sid_fb), 4, buffer_get_address(_buf), sid_cap);
     if (_got <= 0) {
-        status_text = "reSID produced no audio.";
+        scr_ext_sid_msg("reSID produced no audio.");
         scr_ext_sid_stop();
         return false;
     }
@@ -223,9 +227,9 @@ function scr_ext_sid_toggle(_next, _swap_model) {
             scr_ext_sid_start(sid_init_addr, sid_play_addr, sid_song);
         }
         else {
-            status_text = "SID model: 6581";
+            scr_ext_sid_msg("SID model: 6581");
             if (sid_model == 1) {
-                status_text = "SID model: 8580";
+                scr_ext_sid_msg("SID model: 8580");
             }
         }
         return;
@@ -238,13 +242,59 @@ function scr_ext_sid_toggle(_next, _swap_model) {
     }
     if (sid_playing) {
         scr_ext_sid_stop();
-        status_text = "SID stopped.";
+        scr_ext_sid_msg("SID stopped.");
         return;
     }
     var _i = scr_ext_sid_pick();
     if (_i < 0) {
-        status_text = "No playable SID music here (needs a JMP init / JMP play table) - try R, then N.";
+        scr_ext_sid_msg("No playable SID music here (needs a JMP init / JMP play table) - try R, then N.");
         return;
     }
     scr_ext_sid_start(findings[_i].init, findings[_i].play, 0);
+}
+
+/// @desc scr_ext_sid_msg(text) - SID status for the status line and the disk window footer
+function scr_ext_sid_msg(_text) {
+    status_text = _text;
+    sid_message = _text;
+}
+
+/// @desc scr_ext_sid_play_result(result)
+/// Play / Stop button on a disk findings row: plays that file's tune straight
+/// from its cached memory, without leaving the window.
+function scr_ext_sid_play_result(_res) {
+    var _key = string(_res.file) + ":" + string(_res.addr);
+    if (sid_playing && disk_sid_key == _key) {
+        scr_ext_sid_stop();
+        disk_sid_key = "";
+        scr_ext_sid_msg("Stopped \"" + _res.fname + "\".");
+        return;
+    }
+    if (_res.init < 0 && _res.play < 0) {
+        scr_ext_sid_msg("\"" + _res.fname + "\" $" + scr_ext_hex(_res.addr, 4) + ": no init / play found for this one - it may be sound effects, or play code the game calls another way.");
+        return;
+    }
+    var _src = -1;
+    if (_res.file == d64_selected) {
+        _src = mem_buf;
+    }
+    else if (scr_ext_cache_has(_res.file)) {
+        _src = d64_cache[_res.file].mem;
+    }
+    if (_src == -1) {
+        scr_ext_sid_msg("\"" + _res.fname + "\" isn't cached - rescan or open it first.");
+        return;
+    }
+    var _init = _res.init;
+    if (_init < 0) {
+        _init = _res.play;      // play-only player: let the first call set it up
+    }
+    disk_sid_key = "";
+    if (scr_ext_sid_start(_init, _res.play, 0, _src)) {
+        disk_sid_key = _key;
+        scr_ext_sid_msg("Playing \"" + _res.fname + "\" " + _res.kind + " - init $" + scr_ext_hex(_init, 4) + "  play $" + scr_ext_hex(_res.play, 4) + "   (STOP or P to stop)");
+    }
+    else {
+        sid_message = "\"" + _res.fname + "\": " + sid_message;
+    }
 }

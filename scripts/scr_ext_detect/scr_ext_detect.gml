@@ -1378,7 +1378,9 @@ function scr_ext_mark_toggle() {
             len   : _len,
             mode  : gfx_mode,
             conf  : 100,
-            why   : "set by you"
+            why   : "set by you",
+            init  : -1,
+            play  : -1
         });
         array_sort(disk_results, function(_x, _y) {
             return _y.conf - _x.conf;

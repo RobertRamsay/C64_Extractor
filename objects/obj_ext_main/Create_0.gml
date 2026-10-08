@@ -31,6 +31,8 @@ sid_ring_i = 0;
 sid_cap = 0;
 sid_rendered = 0;
 sid_start_time = 0;
+sid_message = "";        // last SID status (shown in the disk findings footer)
+disk_sid_key = "";       // "file:addr" of the disk row that is playing
 
 // ---- 64K C64 memory image and per-byte analysis buffers ----
 mem_buf    = buffer_create(65536, buffer_fixed, 1);   // byte values

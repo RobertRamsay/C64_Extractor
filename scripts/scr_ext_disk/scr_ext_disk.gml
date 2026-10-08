@@ -105,7 +105,9 @@ function scr_ext_disk_scan_step() {
                     len   : _f.len,
                     mode  : _f.mode,
                     conf  : _f.conf,
-                    why   : _f.why
+                    why   : _f.why,
+                    init  : _f.init,
+                    play  : _f.play
                 });
             }
         }
@@ -311,13 +313,20 @@ function scr_ext_disk_input(_mx, _my, _pressed, _wheel) {
             return;
         }
     }
-    // A row
+    // A row (its Play / Stop button first)
     for (var _i = 0; _i < _r[5]; _i++) {
         var _idx = disk_scroll + _i;
         if (_idx >= array_length(_list)) {
             break;
         }
         var _ry = _r[4] + _i * summary_row_h;
+        if (_list[_idx].cat == EXT_DISK_SID) {
+            var _pb = scr_ext_disk_play_rect(_r, _ry);
+            if (point_in_rectangle(_mx, _my, _pb[0], _pb[1], _pb[0] + _pb[2], _pb[1] + _pb[3])) {
+                scr_ext_sid_play_result(_list[_idx]);
+                return;
+            }
+        }
         if (point_in_rectangle(_mx, _my, _r[0] + 8, _ry, _r[0] + _r[2] - 8, _ry + summary_row_h - 1)) {
             disk_open = false;
             scr_ext_disk_open_result(_list[_idx]);
@@ -396,6 +405,20 @@ function scr_ext_disk_draw() {
         draw_text(_x + 430, _ry + 3, "$" + scr_ext_hex(_f.addr, 4) + "-$" + scr_ext_hex(_f.addr + _f.len - 1, 4));
         draw_set_colour(col_dim);
         draw_text(_x + 570, _ry + 3, _f.why);
+
+        // Play / Stop on SID rows
+        if (_f.cat == EXT_DISK_SID) {
+            var _pb = scr_ext_disk_play_rect(_r, _ry);
+            var _label = "PLAY";
+            var _on = false;
+            if (sid_playing && disk_sid_key == string(_f.file) + ":" + string(_f.addr)) {
+                _label = "STOP";
+                _on = true;
+            }
+            draw_set_colour(col_panel);
+            draw_rectangle(_pb[0] - 8, _ry, _x + _w - 8, _ry + summary_row_h - 1, false);
+            scr_ext_draw_button({ bx : _pb[0], by : _pb[1], bw : _pb[2], bh : _pb[3], label : _label, action : "", arg : 0 }, _on);
+        }
     }
     var _shown_to = disk_scroll + _r[5];
     if (_shown_to > array_length(_list)) {
@@ -403,6 +426,15 @@ function scr_ext_disk_draw() {
     }
     draw_set_colour(col_dim);
     draw_text(_x + 14, _r[6] - 24, string(disk_scroll + 1) + "-" + string(_shown_to) + " of " + string(array_length(_list)) + "   (hover a row to preview it below)");
+    // SID status: what is playing, or why it couldn't
+    if (sid_message != "") {
+        draw_set_colour(scr_ext_cls_colour(EXT_CLS_LIKELY));
+        var _msg = sid_message;
+        if (sid_playing) {
+            _msg = "> " + _msg;
+        }
+        draw_text_ext(_x + 380, _r[6] - 24, _msg, line_h, _w - 400);
+    }
 
     // ---- Preview strip ----
     var _hover = -1;
@@ -615,4 +647,9 @@ function scr_ext_preview_build(_src, _mode, _addr, _len) {
     }
     buffer_set_surface(_buf, preview_surf, 0);
     buffer_delete(_buf);
+}
+
+/// @desc scr_ext_disk_play_rect(window_rect, row_y) - [x, y, w, h] of a row's Play button
+function scr_ext_disk_play_rect(_r, _ry) {
+    return [_r[0] + _r[2] - 96, _ry + 1, 80, summary_row_h - 3];
 }
