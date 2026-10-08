@@ -103,7 +103,11 @@ function scr_ext_do_action(_action, _overlay) {
             break;
 
         case "diskscan":
-            scr_ext_disk_scan_start();
+            scr_ext_disk_scan_start(0);
+            break;
+
+        case "unpackall":
+            scr_ext_disk_scan_start(1);
             break;
 
         case "diskfindings":
@@ -111,7 +115,7 @@ function scr_ext_do_action(_action, _overlay) {
                 disk_open = true;
             }
             else {
-                scr_ext_disk_scan_start();
+                scr_ext_disk_scan_start(0);
             }
             break;
 

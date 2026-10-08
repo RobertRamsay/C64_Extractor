@@ -1,0 +1,217 @@
+diff --git a/objects/obj_ext_main/Create_0.gml b/objects/obj_ext_main/Create_0.gml
+index e1d0b50..d8c2ee7 100644
+--- a/objects/obj_ext_main/Create_0.gml
++++ b/objects/obj_ext_main/Create_0.gml
+@@ -65,6 +65,9 @@ disk_scan_index = 0;
+ disk_scan_phase = 0;
+ disk_scan_return = -1;
+ disk_scan_unpacked = 0;
++disk_scan_new = 0;       // files actually unpacked during this pass
++disk_scan_mode = 0;      // 0 = scan for findings, 1 = unpack all
++disk_file_ran_cpu = false;
+ disk_skipped = 0;
+ disk_results = [];       // { file, fname, cat, kind, addr, len, mode, conf, why }
+ disk_open = false;
+@@ -238,19 +241,23 @@ menu_y = 0;
+ menu_w = 300;
+ menu_item_h = 24;
+ menu_base = [
+-    { label : "Open file / project...",      key : "O",            action : "open", arg : "" },
+-    { label : "Save project",                key : "Ctrl+S",       action : "saveproject", arg : "" },
+-    { label : "Save project as...",          key : "Ctrl+Shift+S", action : "saveprojectas", arg : "" },
+-    { label : "-",                           key : "",             action : "", arg : "" },
+-    { label : "Export selection (raw .bin/.prg)", key : "X",       action : "export", arg : "" },
+-    { label : "Export picture (.kla / .art)", key : "",            action : "gexport", arg : "" },
+-    { label : "Export PNG",                  key : "",             action : "gexppng", arg : "" },
+-    { label : "Export sprites (.spd / .bin)", key : "",            action : "gexpspr", arg : "" },
+-    { label : "-",                           key : "",             action : "", arg : "" },
+-    { label : "Scan whole disk",             key : "",             action : "diskscan", arg : "" },
+-    { label : "Disk findings",               key : "",             action : "diskfindings", arg : "" },
+-    { label : "-",                           key : "",             action : "", arg : "" },
+-    { label : "Exit",                        key : "Ctrl+Q",       action : "exit", arg : "" }
++    { label : "WORKFLOW",                            key : "",             action : "", arg : "" },
++    { label : "  1. Open disk / file / project...",  key : "O",            action : "open", arg : "" },
++    { label : "  2. Unpack all files on the disk",   key : "",             action : "unpackall", arg : "" },
++    { label : "  3. Scan disk (graphics + SIDs)",    key : "",             action : "diskscan", arg : "" },
++    { label : "  4. Browse disk findings",           key : "",             action : "diskfindings", arg : "" },
++    { label : "  5. Save project",                   key : "Ctrl+S",       action : "saveproject", arg : "" },
++    { label : "-",                                   key : "",             action : "", arg : "" },
++    { label : "Save project as...",                  key : "Ctrl+Shift+S", action : "saveprojectas", arg : "" },
++    { label : "Unpack this file",                    key : "U",            action : "unpack", arg : "" },
++    { label : "-",                                   key : "",             action : "", arg : "" },
++    { label : "EXPORT",                              key : "",             action : "", arg : "" },
++    { label : "  Selection (raw .bin / .prg)",       key : "X",            action : "export", arg : "" },
++    { label : "  Picture (.kla / .art)",             key : "",             action : "gexport", arg : "" },
++    { label : "  PNG of the viewer",                 key : "",             action : "gexppng", arg : "" },
++    { label : "  Sprites (.spd / .bin)",             key : "",             action : "gexpspr", arg : "" },
++    { label : "-",                                   key : "",             action : "", arg : "" },
++    { label : "Exit",                                key : "Ctrl+Q",       action : "exit", arg : "" }
+ ];
+ menu_items = [];           // menu_base + recent projects (scr_ext_menu_build)
+ recent_max = 8;
+diff --git a/scripts/scr_ext_disk/scr_ext_disk.gml b/scripts/scr_ext_disk/scr_ext_disk.gml
+index 1ada492..e1a1b4a 100644
+--- a/scripts/scr_ext_disk/scr_ext_disk.gml
++++ b/scripts/scr_ext_disk/scr_ext_disk.gml
+@@ -41,17 +41,24 @@ function scr_ext_disk_filter_name(_k) {
+     return "?";
+ }
+ 
+-/// @desc scr_ext_disk_scan_start()
+-function scr_ext_disk_scan_start() {
++/// @desc scr_ext_disk_scan_start(mode)
++/// mode 0 = scan: open every file, unpack what self-extracts, collect findings.
++/// mode 1 = unpack all: only visit packed files and unpack them (no findings).
++function scr_ext_disk_scan_start(_mode = 0) {
+     if (!buffer_exists(d64_buf)) {
+-        status_text = "Scan disk needs a D64 - open one first.";
++        status_text = "This needs a D64 - open one first.";
+         return;
+     }
+     if (cpu_active) {
+         status_text = "Wait for the current unpack to finish first.";
+         return;
+     }
+-    disk_results = [];
++    disk_scan_mode = _mode;
++    if (_mode == 0) {
++        disk_results = [];
++    }
++    disk_scan_new = 0;
++    disk_file_ran_cpu = false;
+     disk_skipped = 0;
+     disk_scan_index = 0;
+     disk_scan_phase = 0;
+@@ -71,6 +78,9 @@ function scr_ext_disk_scan_step() {
+         var _i = disk_scan_index;
+         if (string_pos("unpacked", file_kind) > 0) {
+             disk_scan_unpacked += 1;
++            if (disk_file_ran_cpu) {
++                disk_scan_new += 1;
++            }
+         }
+         var _still_packed = false;
+         var _loaded = 65536 - cls_counts[EXT_CLS_NONE];
+@@ -78,7 +88,11 @@ function scr_ext_disk_scan_step() {
+             _still_packed = true;
+             disk_skipped += 1;
+         }
+-        for (var _k = 0; _k < array_length(findings); _k++) {
++        var _collect = array_length(findings);
++        if (disk_scan_mode == 1) {
++            _collect = 0;       // unpack all: nothing to collect
++        }
++        for (var _k = 0; _k < _collect; _k++) {
+             var _f = findings[_k];
+             var _cat = scr_ext_disk_category(_f);
+             if (_cat > 0) {
+@@ -102,8 +116,21 @@ function scr_ext_disk_scan_step() {
+ 
+     // Phase 0: open the next file (restored from the cache if already done)
+     while (disk_scan_index < _n) {
+-        var _type = d64_files[disk_scan_index].type;
+-        if (_type != 0 && _type != 4) {
++        var _df = d64_files[disk_scan_index];
++        var _wanted = (_df.type != 0 && _df.type != 4);
++        if (disk_scan_mode == 1 && _wanted) {
++            // Unpack all: only packed files that aren't unpacked yet
++            if (!_df.packed) {
++                _wanted = false;
++            }
++            else if (scr_ext_cache_has(disk_scan_index)) {
++                if (string_pos("unpacked", d64_cache[disk_scan_index].file_kind) > 0) {
++                    _wanted = false;
++                    disk_scan_unpacked += 1;
++                }
++            }
++        }
++        if (_wanted) {
+             break;
+         }
+         disk_scan_index += 1;
+@@ -113,7 +140,12 @@ function scr_ext_disk_scan_step() {
+         return;
+     }
+     scr_ext_d64_load_entry(disk_scan_index, false, false);
+-    status_text = "Scanning disk: " + string(disk_scan_index + 1) + " / " + string(_n) + "  \"" + d64_files[disk_scan_index].name + "\"";
++    disk_file_ran_cpu = cpu_active;
++    var _verb = "Scanning disk: ";
++    if (disk_scan_mode == 1) {
++        _verb = "Unpacking disk: ";
++    }
++    status_text = _verb + string(disk_scan_index + 1) + " / " + string(_n) + "  \"" + d64_files[disk_scan_index].name + "\"";
+     if (cpu_active) {
+         status_text += " - unpacking";
+     }
+@@ -125,6 +157,25 @@ function scr_ext_disk_scan_step() {
+ function scr_ext_disk_scan_finish() {
+     disk_scan_active = false;
+ 
++    // ---- Unpack all: report and keep, no findings window ----
++    if (disk_scan_mode == 1) {
++        if (disk_scan_return >= 0) {
++            scr_ext_d64_load_entry(disk_scan_return, false, false);
++        }
++        status_text = "Unpack all: " + string(disk_scan_new) + " files unpacked now";
++        if (disk_scan_unpacked > disk_scan_new) {
++            status_text += ", " + string(disk_scan_unpacked - disk_scan_new) + " were already unpacked";
++        }
++        if (disk_skipped > 0) {
++            status_text += ", " + string(disk_skipped) + " still packed (no SYS line - loaded by the game's own loader)";
++        }
++        status_text += ".  Next: 3. Scan disk.";
++        if (disk_scan_new > 0) {
++            scr_ext_keep_unpacked();
++        }
++        return;
++    }
++
+     // Best first
+     array_sort(disk_results, function(_x, _y) {
+         return _y.conf - _x.conf;
+@@ -143,8 +194,8 @@ function scr_ext_disk_scan_finish() {
+         status_text += ", " + string(disk_skipped) + " still packed (no SYS line - loaded by the game's own loader)";
+     }
+ 
+-    // Keep the unpacked files: autosave the project, or offer to make one
+-    if (disk_scan_unpacked > 0) {
++    // Keep newly unpacked files: autosave the project, or offer to make one
++    if (disk_scan_new > 0) {
+         scr_ext_keep_unpacked();
+     }
+     disk_filter = EXT_DISK_ALL;
+@@ -243,7 +294,7 @@ function scr_ext_disk_input(_mx, _my, _pressed, _wheel) {
+         var _br = scr_ext_disk_button_rect(_b);
+         if (point_in_rectangle(_mx, _my, _br[0], _br[1], _br[0] + _br[2], _br[1] + _br[3])) {
+             if (_b == EXT_DISK_FILTERS) {
+-                scr_ext_disk_scan_start();
++                scr_ext_disk_scan_start(0);
+             }
+             else {
+                 disk_filter = _b;
+diff --git a/scripts/scr_ext_util/scr_ext_util.gml b/scripts/scr_ext_util/scr_ext_util.gml
+index b4f6b3a..2223914 100644
+--- a/scripts/scr_ext_util/scr_ext_util.gml
++++ b/scripts/scr_ext_util/scr_ext_util.gml
+@@ -103,7 +103,11 @@ function scr_ext_do_action(_action, _overlay) {
+             break;
+ 
+         case "diskscan":
+-            scr_ext_disk_scan_start();
++            scr_ext_disk_scan_start(0);
++            break;
++
++        case "unpackall":
++            scr_ext_disk_scan_start(1);
+             break;
+ 
+         case "diskfindings":
+@@ -111,7 +115,7 @@ function scr_ext_do_action(_action, _overlay) {
+                 disk_open = true;
+             }
+             else {
+-                scr_ext_disk_scan_start();
++                scr_ext_disk_scan_start(0);
+             }
+             break;
+ 

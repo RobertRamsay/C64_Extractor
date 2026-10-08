@@ -41,17 +41,24 @@ function scr_ext_disk_filter_name(_k) {
     return "?";
 }
 
-/// @desc scr_ext_disk_scan_start()
-function scr_ext_disk_scan_start() {
+/// @desc scr_ext_disk_scan_start(mode)
+/// mode 0 = scan: open every file, unpack what self-extracts, collect findings.
+/// mode 1 = unpack all: only visit packed files and unpack them (no findings).
+function scr_ext_disk_scan_start(_mode = 0) {
     if (!buffer_exists(d64_buf)) {
-        status_text = "Scan disk needs a D64 - open one first.";
+        status_text = "This needs a D64 - open one first.";
         return;
     }
     if (cpu_active) {
         status_text = "Wait for the current unpack to finish first.";
         return;
     }
-    disk_results = [];
+    disk_scan_mode = _mode;
+    if (_mode == 0) {
+        disk_results = [];
+    }
+    disk_scan_new = 0;
+    disk_file_ran_cpu = false;
     disk_skipped = 0;
     disk_scan_index = 0;
     disk_scan_phase = 0;
@@ -71,6 +78,9 @@ function scr_ext_disk_scan_step() {
         var _i = disk_scan_index;
         if (string_pos("unpacked", file_kind) > 0) {
             disk_scan_unpacked += 1;
+            if (disk_file_ran_cpu) {
+                disk_scan_new += 1;
+            }
         }
         var _still_packed = false;
         var _loaded = 65536 - cls_counts[EXT_CLS_NONE];
@@ -78,7 +88,11 @@ function scr_ext_disk_scan_step() {
             _still_packed = true;
             disk_skipped += 1;
         }
-        for (var _k = 0; _k < array_length(findings); _k++) {
+        var _collect = array_length(findings);
+        if (disk_scan_mode == 1) {
+            _collect = 0;       // unpack all: nothing to collect
+        }
+        for (var _k = 0; _k < _collect; _k++) {
             var _f = findings[_k];
             var _cat = scr_ext_disk_category(_f);
             if (_cat > 0) {
@@ -102,8 +116,21 @@ function scr_ext_disk_scan_step() {
 
     // Phase 0: open the next file (restored from the cache if already done)
     while (disk_scan_index < _n) {
-        var _type = d64_files[disk_scan_index].type;
-        if (_type != 0 && _type != 4) {
+        var _df = d64_files[disk_scan_index];
+        var _wanted = (_df.type != 0 && _df.type != 4);
+        if (disk_scan_mode == 1 && _wanted) {
+            // Unpack all: only packed files that aren't unpacked yet
+            if (!_df.packed) {
+                _wanted = false;
+            }
+            else if (scr_ext_cache_has(disk_scan_index)) {
+                if (string_pos("unpacked", d64_cache[disk_scan_index].file_kind) > 0) {
+                    _wanted = false;
+                    disk_scan_unpacked += 1;
+                }
+            }
+        }
+        if (_wanted) {
             break;
         }
         disk_scan_index += 1;
@@ -113,7 +140,12 @@ function scr_ext_disk_scan_step() {
         return;
     }
     scr_ext_d64_load_entry(disk_scan_index, false, false);
-    status_text = "Scanning disk: " + string(disk_scan_index + 1) + " / " + string(_n) + "  \"" + d64_files[disk_scan_index].name + "\"";
+    disk_file_ran_cpu = cpu_active;
+    var _verb = "Scanning disk: ";
+    if (disk_scan_mode == 1) {
+        _verb = "Unpacking disk: ";
+    }
+    status_text = _verb + string(disk_scan_index + 1) + " / " + string(_n) + "  \"" + d64_files[disk_scan_index].name + "\"";
     if (cpu_active) {
         status_text += " - unpacking";
     }
@@ -124,6 +156,25 @@ function scr_ext_disk_scan_step() {
 /// @desc scr_ext_disk_scan_finish()
 function scr_ext_disk_scan_finish() {
     disk_scan_active = false;
+
+    // ---- Unpack all: report and keep, no findings window ----
+    if (disk_scan_mode == 1) {
+        if (disk_scan_return >= 0) {
+            scr_ext_d64_load_entry(disk_scan_return, false, false);
+        }
+        status_text = "Unpack all: " + string(disk_scan_new) + " files unpacked now";
+        if (disk_scan_unpacked > disk_scan_new) {
+            status_text += ", " + string(disk_scan_unpacked - disk_scan_new) + " were already unpacked";
+        }
+        if (disk_skipped > 0) {
+            status_text += ", " + string(disk_skipped) + " still packed (no SYS line - loaded by the game's own loader)";
+        }
+        status_text += ".  Next: 3. Scan disk.";
+        if (disk_scan_new > 0) {
+            scr_ext_keep_unpacked();
+        }
+        return;
+    }
 
     // Best first
     array_sort(disk_results, function(_x, _y) {
@@ -143,8 +194,8 @@ function scr_ext_disk_scan_finish() {
         status_text += ", " + string(disk_skipped) + " still packed (no SYS line - loaded by the game's own loader)";
     }
 
-    // Keep the unpacked files: autosave the project, or offer to make one
-    if (disk_scan_unpacked > 0) {
+    // Keep newly unpacked files: autosave the project, or offer to make one
+    if (disk_scan_new > 0) {
         scr_ext_keep_unpacked();
     }
     disk_filter = EXT_DISK_ALL;
@@ -243,7 +294,7 @@ function scr_ext_disk_input(_mx, _my, _pressed, _wheel) {
         var _br = scr_ext_disk_button_rect(_b);
         if (point_in_rectangle(_mx, _my, _br[0], _br[1], _br[0] + _br[2], _br[1] + _br[3])) {
             if (_b == EXT_DISK_FILTERS) {
-                scr_ext_disk_scan_start();
+                scr_ext_disk_scan_start(0);
             }
             else {
                 disk_filter = _b;

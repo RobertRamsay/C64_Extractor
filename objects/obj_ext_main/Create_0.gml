@@ -65,6 +65,9 @@ disk_scan_index = 0;
 disk_scan_phase = 0;
 disk_scan_return = -1;
 disk_scan_unpacked = 0;
+disk_scan_new = 0;       // files actually unpacked during this pass
+disk_scan_mode = 0;      // 0 = scan for findings, 1 = unpack all
+disk_file_ran_cpu = false;
 disk_skipped = 0;
 disk_results = [];       // { file, fname, cat, kind, addr, len, mode, conf, why }
 disk_open = false;
@@ -238,19 +241,23 @@ menu_y = 0;
 menu_w = 300;
 menu_item_h = 24;
 menu_base = [
-    { label : "Open file / project...",      key : "O",            action : "open", arg : "" },
-    { label : "Save project",                key : "Ctrl+S",       action : "saveproject", arg : "" },
-    { label : "Save project as...",          key : "Ctrl+Shift+S", action : "saveprojectas", arg : "" },
-    { label : "-",                           key : "",             action : "", arg : "" },
-    { label : "Export selection (raw .bin/.prg)", key : "X",       action : "export", arg : "" },
-    { label : "Export picture (.kla / .art)", key : "",            action : "gexport", arg : "" },
-    { label : "Export PNG",                  key : "",             action : "gexppng", arg : "" },
-    { label : "Export sprites (.spd / .bin)", key : "",            action : "gexpspr", arg : "" },
-    { label : "-",                           key : "",             action : "", arg : "" },
-    { label : "Scan whole disk",             key : "",             action : "diskscan", arg : "" },
-    { label : "Disk findings",               key : "",             action : "diskfindings", arg : "" },
-    { label : "-",                           key : "",             action : "", arg : "" },
-    { label : "Exit",                        key : "Ctrl+Q",       action : "exit", arg : "" }
+    { label : "WORKFLOW",                            key : "",             action : "", arg : "" },
+    { label : "  1. Open disk / file / project...",  key : "O",            action : "open", arg : "" },
+    { label : "  2. Unpack all files on the disk",   key : "",             action : "unpackall", arg : "" },
+    { label : "  3. Scan disk (graphics + SIDs)",    key : "",             action : "diskscan", arg : "" },
+    { label : "  4. Browse disk findings",           key : "",             action : "diskfindings", arg : "" },
+    { label : "  5. Save project",                   key : "Ctrl+S",       action : "saveproject", arg : "" },
+    { label : "-",                                   key : "",             action : "", arg : "" },
+    { label : "Save project as...",                  key : "Ctrl+Shift+S", action : "saveprojectas", arg : "" },
+    { label : "Unpack this file",                    key : "U",            action : "unpack", arg : "" },
+    { label : "-",                                   key : "",             action : "", arg : "" },
+    { label : "EXPORT",                              key : "",             action : "", arg : "" },
+    { label : "  Selection (raw .bin / .prg)",       key : "X",            action : "export", arg : "" },
+    { label : "  Picture (.kla / .art)",             key : "",             action : "gexport", arg : "" },
+    { label : "  PNG of the viewer",                 key : "",             action : "gexppng", arg : "" },
+    { label : "  Sprites (.spd / .bin)",             key : "",             action : "gexpspr", arg : "" },
+    { label : "-",                                   key : "",             action : "", arg : "" },
+    { label : "Exit",                                key : "Ctrl+Q",       action : "exit", arg : "" }
 ];
 menu_items = [];           // menu_base + recent projects (scr_ext_menu_build)
 recent_max = 8;
