@@ -849,7 +849,10 @@ function scr_ext_detect_sid() {
         }
     }
 
-    var _verify_budget = 4;     // routines verified per analysis (each costs a few frames of 6502)
+    var _verify_budget = 6;     // routines play-tested per analysis
+    var _prev_find = -1;        // last SID finding pushed (for merging a split player)
+    var _prev_table = -1;
+    var _prev_regs = array_create(32, 0);
     var _i = 0;
     while (_i < _n) {
         var _j = _i;
@@ -903,7 +906,9 @@ function scr_ext_detect_sid() {
                     var _t2 = scr_ext_peek16(_p + 4);
                     if (_t1 != _t2 && _t1 >= _start - 0x800 && _t1 <= _end + 0x800 && _t2 >= _start - 0x800 && _t2 <= _end + 0x800) {
                         if (scr_ext_is_loaded(_t1) && scr_ext_is_loaded(_t2)) {
+                            // Usually JMP init / JMP play, but some players swap them
                             array_push(_pairs, { init : _t1, play : _t2, table : _p });
+                            array_push(_pairs, { init : _t2, play : _t1, table : _p });
                             break;
                         }
                     }
@@ -936,9 +941,24 @@ function scr_ext_detect_sid() {
                 array_push(_pairs, { init : _init_guess, play : _targets[_pl], table : -1 });
             }
 
+            // ---- Same entry table as the routine before: one player split by its data ----
+            if (array_length(_pairs) > 0 && _pairs[0].table >= 0 && _pairs[0].table == _prev_table && _prev_find >= 0) {
+                var _pf = findings[_prev_find];
+                if (_end > _pf.addr + _pf.len) {
+                    _pf.len = _end - _pf.addr;
+                }
+                for (var _rr = 0; _rr < 32; _rr++) {
+                    if (_regs[_rr] == 1) {
+                        _prev_regs[_rr] = 1;
+                    }
+                }
+                _i = _j + 1;
+                continue;
+            }
+
             // ---- 4. verify by playing ----
             var _kind = "SID sound code";
-            var _why = string(_distinct) + " SID registers written";
+            var _why = scr_ext_sid_regs_text(_distinct, _indexed);
             var _init = -1;
             var _play = -1;
             if (array_length(_pairs) > 0 && _pairs[0].table >= 0) {
@@ -948,11 +968,11 @@ function scr_ext_detect_sid() {
                 _play = _pairs[0].play;
                 _start = _pairs[0].table;
                 _conf += 15;
-                _why = "init $" + scr_ext_hex(_init, 4) + "  play $" + scr_ext_hex(_play, 4) + ", " + _why;
+                _why = "JMP table: init $" + scr_ext_hex(_init, 4) + "  play $" + scr_ext_hex(_play, 4) + " (not confirmed by playing), " + _why;
             }
             var _tries = array_length(_pairs);
-            if (_tries > 4) {
-                _tries = 4;
+            if (_tries > 5) {
+                _tries = 5;
             }
             if (_verify_budget > 0) {
                 _verify_budget -= 1;
@@ -985,9 +1005,24 @@ function scr_ext_detect_sid() {
                 _conf = 100;
             }
             array_push(findings, { addr : _start, len : _end - _start, kind : _kind, mode : -1, conf : _conf, why : _why, scr : -1, init : _init, play : _play, mark : -1 });
+            _prev_find = array_length(findings) - 1;
+            _prev_table = -1;
+            if (array_length(_pairs) > 0) {
+                _prev_table = _pairs[0].table;
+            }
+            _prev_regs = _regs;
         }
         _i = _j + 1;
     }
+}
+
+/// @desc scr_ext_sid_regs_text(distinct, indexed) - what the stores cover, in words
+function scr_ext_sid_regs_text(_distinct, _indexed) {
+    var _t = string(_distinct) + " different SID registers stored to";
+    if (_indexed) {
+        _t += " (indexed, e.g. STA $D400,X - one set reaches all 3 voices)";
+    }
+    return _t;
 }
 
 /// @desc scr_ext_sid_verify(init, play)
@@ -1037,9 +1072,14 @@ function scr_ext_sid_verify_run(_init, _play) {
     var _prev = array_create(25, -1);
     var _changes = 0;
     var _touched = 0;
-    for (var _f = 0; _f < 25; _f++) {
+    // Up to 100 frames (2 s) - quiet intros and long notes need time - but stop
+    // as soon as it is clearly music
+    for (var _f = 0; _f < 100; _f++) {
         if (scr_ext_sid_call(_play, 0, 25000) != "return") {
             return 0;
+        }
+        if (_changes >= 8 && (buffer_peek(sid_shadow, 0x18, buffer_u8) & 15) > 0) {
+            return 2;
         }
         for (var _r = 0; _r < 25; _r++) {
             var _v = buffer_peek(sid_shadow, _r, buffer_u8);
