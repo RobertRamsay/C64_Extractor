@@ -1,0 +1,201 @@
+diff --git a/objects/obj_ext_main/Create_0.gml b/objects/obj_ext_main/Create_0.gml
+index 4df1048..dfd9333 100644
+--- a/objects/obj_ext_main/Create_0.gml
++++ b/objects/obj_ext_main/Create_0.gml
+@@ -204,18 +204,20 @@ menu_x = 0;            // dropdown rectangle
+ menu_y = 0;
+ menu_w = 300;
+ menu_item_h = 24;
+-menu_items = [
+-    { label : "Open file / project...",      key : "O",            action : "open" },
+-    { label : "Save project",                key : "Ctrl+S",       action : "saveproject" },
+-    { label : "Save project as...",          key : "Ctrl+Shift+S", action : "saveprojectas" },
+-    { label : "-",                           key : "",             action : "" },
+-    { label : "Export selection (raw .bin/.prg)", key : "X",       action : "export" },
+-    { label : "Export picture (.kla / .art)", key : "",            action : "gexport" },
+-    { label : "Export PNG",                  key : "",             action : "gexppng" },
+-    { label : "Export sprites (.spd / .bin)", key : "",            action : "gexpspr" },
+-    { label : "-",                           key : "",             action : "" },
+-    { label : "Exit",                        key : "Ctrl+Q",       action : "exit" }
++menu_base = [
++    { label : "Open file / project...",      key : "O",            action : "open", arg : "" },
++    { label : "Save project",                key : "Ctrl+S",       action : "saveproject", arg : "" },
++    { label : "Save project as...",          key : "Ctrl+Shift+S", action : "saveprojectas", arg : "" },
++    { label : "-",                           key : "",             action : "", arg : "" },
++    { label : "Export selection (raw .bin/.prg)", key : "X",       action : "export", arg : "" },
++    { label : "Export picture (.kla / .art)", key : "",            action : "gexport", arg : "" },
++    { label : "Export PNG",                  key : "",             action : "gexppng", arg : "" },
++    { label : "Export sprites (.spd / .bin)", key : "",            action : "gexpspr", arg : "" },
++    { label : "-",                           key : "",             action : "", arg : "" },
++    { label : "Exit",                        key : "Ctrl+Q",       action : "exit", arg : "" }
+ ];
++menu_items = [];           // menu_base + recent projects (scr_ext_menu_build)
++recent_max = 8;
+ 
+ // ---- Colours ----
+ col_bg        = make_colour_rgb(10, 10, 14);
+@@ -236,4 +238,5 @@ col_sel       = make_colour_rgb(70, 110, 70);
+ 
+ gpu_set_texfilter(false);
+ scr_ext_reset_memory();
++scr_ext_menu_build();
+ scr_ext_update_window();
+diff --git a/objects/obj_ext_main/Step_0.gml b/objects/obj_ext_main/Step_0.gml
+index fad4541..7dd944a 100644
+--- a/objects/obj_ext_main/Step_0.gml
++++ b/objects/obj_ext_main/Step_0.gml
+@@ -80,7 +80,12 @@ if (menu_open) {
+         var _mi = scr_ext_menu_hit(_mx, _my);
+         menu_open = false;
+         if (_mi >= 0) {
+-            scr_ext_do_action(menu_items[_mi].action, _shift);
++            if (menu_items[_mi].action == "recent") {
++                scr_ext_load_path(menu_items[_mi].arg, false);
++            }
++            else {
++                scr_ext_do_action(menu_items[_mi].action, _shift);
++            }
+         }
+     }
+     if (keyboard_check_pressed(vk_escape)) {
+diff --git a/scripts/scr_ext_project/scr_ext_project.gml b/scripts/scr_ext_project/scr_ext_project.gml
+index 12823a0..172799a 100644
+--- a/scripts/scr_ext_project/scr_ext_project.gml
++++ b/scripts/scr_ext_project/scr_ext_project.gml
+@@ -117,7 +117,11 @@ function scr_ext_project_write(_path) {
+     buffer_write(_buf, buffer_string, _json);
+     buffer_save(_buf, _path);
+     buffer_delete(_buf);
+-    return file_exists(_path);
++    if (file_exists(_path)) {
++        scr_ext_recent_add(_path);
++        return true;
++    }
++    return false;
+ }
+ 
+ /// @desc scr_ext_project_load(path)
+@@ -274,6 +278,7 @@ function scr_ext_project_load(_path) {
+     map_dirty = true;
+ 
+     project_path = _path;
++    scr_ext_recent_add(_path);
+     status_text = "Project loaded: " + filename_name(_path);
+     return true;
+ }
+diff --git a/scripts/scr_ext_ui/scr_ext_ui.gml b/scripts/scr_ext_ui/scr_ext_ui.gml
+index c3b94de..4c5c828 100644
+--- a/scripts/scr_ext_ui/scr_ext_ui.gml
++++ b/scripts/scr_ext_ui/scr_ext_ui.gml
+@@ -109,13 +109,7 @@ function scr_ext_layout() {
+     menu_bw = string_width("= C64 EXTRACTOR") + 20;
+     menu_x = menu_bx;
+     menu_y = top_h - 4;
+-    menu_w = 0;
+-    for (var _m = 0; _m < array_length(menu_items); _m++) {
+-        var _mw = string_width(menu_items[_m].label) + string_width(menu_items[_m].key) + 60;
+-        if (_mw > menu_w) {
+-            menu_w = _mw;
+-        }
+-    }
++    scr_ext_menu_build();
+     var _tbx = menu_bx + menu_bw + 14;
+     for (var _i = 0; _i < array_length(buttons); _i++) {
+         buttons[_i].bw = string_width(buttons[_i].label) + 18;
+diff --git a/scripts/scr_ext_util/scr_ext_util.gml b/scripts/scr_ext_util/scr_ext_util.gml
+index 55de561..43455d5 100644
+--- a/scripts/scr_ext_util/scr_ext_util.gml
++++ b/scripts/scr_ext_util/scr_ext_util.gml
+@@ -337,6 +337,11 @@ function scr_ext_menu_draw() {
+             draw_line(menu_x + 8, _iy + menu_item_h / 2, menu_x + menu_w - 8, _iy + menu_item_h / 2);
+             continue;
+         }
++        if (_it.action == "") {
++            draw_set_colour(col_title);
++            draw_text(menu_x + 12, _iy + 5, _it.label);
++            continue;
++        }
+         if (_i == _hover) {
+             draw_set_colour(col_button_on);
+             draw_rectangle(menu_x + 2, _iy, menu_x + menu_w - 2, _iy + menu_item_h - 1, false);
+@@ -467,3 +472,80 @@ function scr_ext_summary_draw() {
+         draw_text(_x + 14, _ty + _shown * summary_row_h + 4, "+ " + string(_n - _shown) + " more (lower confidence) - J reaches them too");
+     }
+ }
++
++// ---------------------------------------------------------------------------
++// Recent projects (kept in c64_extractor.ini, newest first)
++// ---------------------------------------------------------------------------
++
++/// @desc scr_ext_recent_list() - recent project paths that still exist
++function scr_ext_recent_list() {
++    var _out = [];
++    ini_open("c64_extractor.ini");
++    for (var _i = 0; _i < recent_max; _i++) {
++        var _p = ini_read_string("recent", "p" + string(_i), "");
++        if (_p != "") {
++            if (file_exists(_p)) {
++                array_push(_out, _p);
++            }
++        }
++    }
++    ini_close();
++    return _out;
++}
++
++/// @desc scr_ext_recent_add(path) - moves a project to the top of the list
++function scr_ext_recent_add(_path) {
++    var _old = scr_ext_recent_list();
++    var _list = [_path];
++    for (var _i = 0; _i < array_length(_old); _i++) {
++        if (string_lower(_old[_i]) != string_lower(_path)) {
++            if (array_length(_list) < recent_max) {
++                array_push(_list, _old[_i]);
++            }
++        }
++    }
++    ini_open("c64_extractor.ini");
++    for (var _i = 0; _i < recent_max; _i++) {
++        var _p = "";
++        if (_i < array_length(_list)) {
++            _p = _list[_i];
++        }
++        ini_write_string("recent", "p" + string(_i), _p);
++    }
++    ini_close();
++    scr_ext_menu_build();
++}
++
++/// @desc scr_ext_menu_build()
++/// The title menu: fixed items, then the recent projects at the bottom.
++function scr_ext_menu_build() {
++    menu_items = [];
++    for (var _i = 0; _i < array_length(menu_base); _i++) {
++        array_push(menu_items, menu_base[_i]);
++    }
++    var _recent = scr_ext_recent_list();
++    if (array_length(_recent) > 0) {
++        array_push(menu_items, { label : "-", key : "", action : "", arg : "" });
++        array_push(menu_items, { label : "Recent projects", key : "", action : "", arg : "" });
++        for (var _i = 0; _i < array_length(_recent); _i++) {
++            // Right-hand column: the end of the folder it lives in
++            var _dir = filename_path(_recent[_i]);
++            if (string_length(_dir) > 32) {
++                _dir = "..." + string_copy(_dir, string_length(_dir) - 28, 29);
++            }
++            array_push(menu_items, { label : "  " + filename_name(_recent[_i]), key : _dir, action : "recent", arg : _recent[_i] });
++        }
++    }
++
++    draw_set_font(-1);
++    menu_w = 0;
++    for (var _m = 0; _m < array_length(menu_items); _m++) {
++        var _mw = string_width(menu_items[_m].label) + string_width(menu_items[_m].key) + 60;
++        if (_mw > menu_w) {
++            menu_w = _mw;
++        }
++    }
++    if (menu_x + menu_w > gui_w - 8) {
++        menu_w = gui_w - 8 - menu_x;
++    }
++}

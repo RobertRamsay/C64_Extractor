@@ -204,18 +204,20 @@ menu_x = 0;            // dropdown rectangle
 menu_y = 0;
 menu_w = 300;
 menu_item_h = 24;
-menu_items = [
-    { label : "Open file / project...",      key : "O",            action : "open" },
-    { label : "Save project",                key : "Ctrl+S",       action : "saveproject" },
-    { label : "Save project as...",          key : "Ctrl+Shift+S", action : "saveprojectas" },
-    { label : "-",                           key : "",             action : "" },
-    { label : "Export selection (raw .bin/.prg)", key : "X",       action : "export" },
-    { label : "Export picture (.kla / .art)", key : "",            action : "gexport" },
-    { label : "Export PNG",                  key : "",             action : "gexppng" },
-    { label : "Export sprites (.spd / .bin)", key : "",            action : "gexpspr" },
-    { label : "-",                           key : "",             action : "" },
-    { label : "Exit",                        key : "Ctrl+Q",       action : "exit" }
+menu_base = [
+    { label : "Open file / project...",      key : "O",            action : "open", arg : "" },
+    { label : "Save project",                key : "Ctrl+S",       action : "saveproject", arg : "" },
+    { label : "Save project as...",          key : "Ctrl+Shift+S", action : "saveprojectas", arg : "" },
+    { label : "-",                           key : "",             action : "", arg : "" },
+    { label : "Export selection (raw .bin/.prg)", key : "X",       action : "export", arg : "" },
+    { label : "Export picture (.kla / .art)", key : "",            action : "gexport", arg : "" },
+    { label : "Export PNG",                  key : "",             action : "gexppng", arg : "" },
+    { label : "Export sprites (.spd / .bin)", key : "",            action : "gexpspr", arg : "" },
+    { label : "-",                           key : "",             action : "", arg : "" },
+    { label : "Exit",                        key : "Ctrl+Q",       action : "exit", arg : "" }
 ];
+menu_items = [];           // menu_base + recent projects (scr_ext_menu_build)
+recent_max = 8;
 
 // ---- Colours ----
 col_bg        = make_colour_rgb(10, 10, 14);
@@ -236,4 +238,5 @@ col_sel       = make_colour_rgb(70, 110, 70);
 
 gpu_set_texfilter(false);
 scr_ext_reset_memory();
+scr_ext_menu_build();
 scr_ext_update_window();

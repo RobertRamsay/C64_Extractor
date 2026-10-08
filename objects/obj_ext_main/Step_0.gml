@@ -80,7 +80,12 @@ if (menu_open) {
         var _mi = scr_ext_menu_hit(_mx, _my);
         menu_open = false;
         if (_mi >= 0) {
-            scr_ext_do_action(menu_items[_mi].action, _shift);
+            if (menu_items[_mi].action == "recent") {
+                scr_ext_load_path(menu_items[_mi].arg, false);
+            }
+            else {
+                scr_ext_do_action(menu_items[_mi].action, _shift);
+            }
         }
     }
     if (keyboard_check_pressed(vk_escape)) {

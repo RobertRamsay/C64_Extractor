@@ -337,6 +337,11 @@ function scr_ext_menu_draw() {
             draw_line(menu_x + 8, _iy + menu_item_h / 2, menu_x + menu_w - 8, _iy + menu_item_h / 2);
             continue;
         }
+        if (_it.action == "") {
+            draw_set_colour(col_title);
+            draw_text(menu_x + 12, _iy + 5, _it.label);
+            continue;
+        }
         if (_i == _hover) {
             draw_set_colour(col_button_on);
             draw_rectangle(menu_x + 2, _iy, menu_x + menu_w - 2, _iy + menu_item_h - 1, false);
@@ -465,5 +470,82 @@ function scr_ext_summary_draw() {
     if (_n > _shown) {
         draw_set_colour(col_dim);
         draw_text(_x + 14, _ty + _shown * summary_row_h + 4, "+ " + string(_n - _shown) + " more (lower confidence) - J reaches them too");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Recent projects (kept in c64_extractor.ini, newest first)
+// ---------------------------------------------------------------------------
+
+/// @desc scr_ext_recent_list() - recent project paths that still exist
+function scr_ext_recent_list() {
+    var _out = [];
+    ini_open("c64_extractor.ini");
+    for (var _i = 0; _i < recent_max; _i++) {
+        var _p = ini_read_string("recent", "p" + string(_i), "");
+        if (_p != "") {
+            if (file_exists(_p)) {
+                array_push(_out, _p);
+            }
+        }
+    }
+    ini_close();
+    return _out;
+}
+
+/// @desc scr_ext_recent_add(path) - moves a project to the top of the list
+function scr_ext_recent_add(_path) {
+    var _old = scr_ext_recent_list();
+    var _list = [_path];
+    for (var _i = 0; _i < array_length(_old); _i++) {
+        if (string_lower(_old[_i]) != string_lower(_path)) {
+            if (array_length(_list) < recent_max) {
+                array_push(_list, _old[_i]);
+            }
+        }
+    }
+    ini_open("c64_extractor.ini");
+    for (var _i = 0; _i < recent_max; _i++) {
+        var _p = "";
+        if (_i < array_length(_list)) {
+            _p = _list[_i];
+        }
+        ini_write_string("recent", "p" + string(_i), _p);
+    }
+    ini_close();
+    scr_ext_menu_build();
+}
+
+/// @desc scr_ext_menu_build()
+/// The title menu: fixed items, then the recent projects at the bottom.
+function scr_ext_menu_build() {
+    menu_items = [];
+    for (var _i = 0; _i < array_length(menu_base); _i++) {
+        array_push(menu_items, menu_base[_i]);
+    }
+    var _recent = scr_ext_recent_list();
+    if (array_length(_recent) > 0) {
+        array_push(menu_items, { label : "-", key : "", action : "", arg : "" });
+        array_push(menu_items, { label : "Recent projects", key : "", action : "", arg : "" });
+        for (var _i = 0; _i < array_length(_recent); _i++) {
+            // Right-hand column: the end of the folder it lives in
+            var _dir = filename_path(_recent[_i]);
+            if (string_length(_dir) > 32) {
+                _dir = "..." + string_copy(_dir, string_length(_dir) - 28, 29);
+            }
+            array_push(menu_items, { label : "  " + filename_name(_recent[_i]), key : _dir, action : "recent", arg : _recent[_i] });
+        }
+    }
+
+    draw_set_font(-1);
+    menu_w = 0;
+    for (var _m = 0; _m < array_length(menu_items); _m++) {
+        var _mw = string_width(menu_items[_m].label) + string_width(menu_items[_m].key) + 60;
+        if (_mw > menu_w) {
+            menu_w = _mw;
+        }
+    }
+    if (menu_x + menu_w > gui_w - 8) {
+        menu_w = gui_w - 8 - menu_x;
     }
 }

@@ -117,7 +117,11 @@ function scr_ext_project_write(_path) {
     buffer_write(_buf, buffer_string, _json);
     buffer_save(_buf, _path);
     buffer_delete(_buf);
-    return file_exists(_path);
+    if (file_exists(_path)) {
+        scr_ext_recent_add(_path);
+        return true;
+    }
+    return false;
 }
 
 /// @desc scr_ext_project_load(path)
@@ -274,6 +278,7 @@ function scr_ext_project_load(_path) {
     map_dirty = true;
 
     project_path = _path;
+    scr_ext_recent_add(_path);
     status_text = "Project loaded: " + filename_name(_path);
     return true;
 }
