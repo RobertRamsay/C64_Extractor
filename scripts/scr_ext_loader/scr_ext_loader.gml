@@ -24,6 +24,9 @@ function scr_ext_load_path(_path, _overlay) {
     }
 
     var _ext = string_lower(filename_ext(_path));
+    if (_ext == ".c64x") {
+        return scr_ext_project_load(_path);
+    }
     if (_ext == ".crt" || _ext == ".tap" || _ext == ".t64") {
         status_text = string_upper(_ext) + " files aren't supported yet (later phase).";
         return false;
@@ -45,6 +48,7 @@ function scr_ext_load_path(_path, _overlay) {
             buffer_delete(d64_buf);
         }
         d64_buf = _buf;
+        d64_path = _path;
         if (!scr_ext_d64_open(_size)) {
             buffer_delete(d64_buf);
             d64_buf = -1;
@@ -76,6 +80,7 @@ function scr_ext_load_path(_path, _overlay) {
     }
     d64_buf = -1;
     d64_files = [];
+    d64_path = "";
     d64_disk_name = "";
     d64_selected = -1;
     d64_scroll = 0;

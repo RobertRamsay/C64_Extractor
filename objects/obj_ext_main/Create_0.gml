@@ -36,6 +36,7 @@ verdict_text = "";
 
 // ---- D64 state ----
 d64_buf = -1;
+d64_path = "";         // the open D64, remembered in project files
 d64_tracks = 35;
 d64_disk_name = "";
 d64_files = [];         // { name, type, typename, track, sector, blocks }
@@ -173,7 +174,8 @@ buttons = [
     { bx : 680, by : 8, bw : 130, bh : 24, label : "Fullscreen [F11]", action : "fullscreen" },
     { bx : 816, by : 8, bw : 140, bh : 24, label : "Export sel [X]",   action : "export" },
     { bx : 962, by : 8, bw : 110, bh : 24, label : "Unpack [U]",       action : "unpack" },
-    { bx : 1078, by : 8, bw : 150, bh : 24, label : "Deselect [Ctrl+D]", action : "deselect" }
+    { bx : 1078, by : 8, bw : 150, bh : 24, label : "Deselect [Ctrl+D]", action : "deselect" },
+    { bx : 1234, by : 8, bw : 150, bh : 24, label : "Save project [Ctrl+S]", action : "saveproject" }
 ];
 
 // ---- Colours ----

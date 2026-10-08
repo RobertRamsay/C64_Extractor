@@ -67,7 +67,7 @@ function scr_ext_views_to(_addr) {
 function scr_ext_do_action(_action, _overlay) {
     switch (_action) {
         case "open":
-            var _path = get_open_filename("C64 files|*.prg;*.d64;*.bin;*.raw;*.dump;*.crt;*.tap;*.t64|All files|*.*", "");
+            var _path = get_open_filename("C64 files and projects|*.prg;*.d64;*.bin;*.raw;*.dump;*.c64x;*.crt;*.tap;*.t64|Extractor project|*.c64x|All files|*.*", "");
             io_clear();
             // Force a full relayout / redraw after the modal dialog
             last_win_w = 0;
@@ -106,6 +106,10 @@ function scr_ext_do_action(_action, _overlay) {
             if (!cpu_active) {
                 scr_ext_decrunch_start(scr_ext_unpack_entry());
             }
+            break;
+
+        case "saveproject":
+            scr_ext_project_save();
             break;
 
         case "deselect":

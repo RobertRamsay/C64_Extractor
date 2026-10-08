@@ -34,6 +34,7 @@
     {"id":{"name":"scr_ext_macros","path":"scripts/scr_ext_macros/scr_ext_macros.yy",},},
     {"id":{"name":"scr_ext_map","path":"scripts/scr_ext_map/scr_ext_map.yy",},},
     {"id":{"name":"scr_ext_opcode_table","path":"scripts/scr_ext_opcode_table/scr_ext_opcode_table.yy",},},
+    {"id":{"name":"scr_ext_project","path":"scripts/scr_ext_project/scr_ext_project.yy",},},
     {"id":{"name":"scr_ext_ui","path":"scripts/scr_ext_ui/scr_ext_ui.yy",},},
     {"id":{"name":"scr_ext_util","path":"scripts/scr_ext_util/scr_ext_util.yy",},},
   ],

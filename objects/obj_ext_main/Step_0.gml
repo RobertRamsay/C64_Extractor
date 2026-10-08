@@ -231,7 +231,10 @@ if (keyboard_check_pressed(ord("X"))) {
 if (keyboard_check(vk_control) && keyboard_check_pressed(ord("D"))) {
     scr_ext_do_action("deselect", false);
 }
-if (keyboard_check_pressed(ord("L"))) {
+if (keyboard_check(vk_control) && keyboard_check_pressed(ord("S"))) {
+    scr_ext_do_action("saveproject", false);
+}
+if (keyboard_check_pressed(ord("L")) && !keyboard_check(vk_control)) {
     scr_ext_gfx_do_button({ action : "galign", arg : 0 }, false);
 }
 if (keyboard_check_pressed(ord("K"))) {
