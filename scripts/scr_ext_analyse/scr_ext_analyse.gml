@@ -33,6 +33,7 @@ function scr_ext_analyse() {
     scr_ext_apply_vic_clues(scr_ext_find_vic_writes());
     scr_ext_detect_packed();
     scr_ext_detect_text();
+    scr_ext_detect_bitmaps();
     scr_ext_detect_gfx();
 
     // Whatever is left is graded as possible / doubtful / not code

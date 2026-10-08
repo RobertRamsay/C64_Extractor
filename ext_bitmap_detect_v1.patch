@@ -1,0 +1,353 @@
+diff --git a/objects/obj_ext_main/Create_0.gml b/objects/obj_ext_main/Create_0.gml
+index 7c1ea14..ff97a66 100644
+--- a/objects/obj_ext_main/Create_0.gml
++++ b/objects/obj_ext_main/Create_0.gml
+@@ -50,7 +50,8 @@ manual_entries = [];    // addresses traced by hand with C
+ cls_counts = array_create(EXT_CLS_COUNT, 0);
+ vic_clues = [];          // { addr, len, kind, mode, why, scr, conf }
+ clue_base_conf = 100;    // confidence given to clues from the write being processed
+-findings = [];           // { addr, len, kind, mode, conf, why, scr } best first
++findings = [];           // { addr, len, kind, mode, conf, why, scr, init, play } best first
++bitmap_hits = [];        // { addr, mc, ratio, conf } from scr_ext_detect_bitmaps
+ summary_open = false;    // analysis summary window
+ summary_x = 0;
+ summary_y = 0;
+diff --git a/scripts/scr_ext_analyse/scr_ext_analyse.gml b/scripts/scr_ext_analyse/scr_ext_analyse.gml
+index d459287..48acded 100644
+--- a/scripts/scr_ext_analyse/scr_ext_analyse.gml
++++ b/scripts/scr_ext_analyse/scr_ext_analyse.gml
+@@ -33,6 +33,7 @@ function scr_ext_analyse() {
+     scr_ext_apply_vic_clues(scr_ext_find_vic_writes());
+     scr_ext_detect_packed();
+     scr_ext_detect_text();
++    scr_ext_detect_bitmaps();
+     scr_ext_detect_gfx();
+ 
+     // Whatever is left is graded as possible / doubtful / not code
+diff --git a/scripts/scr_ext_detect/scr_ext_detect.gml b/scripts/scr_ext_detect/scr_ext_detect.gml
+index 858c14b..197aacb 100644
+--- a/scripts/scr_ext_detect/scr_ext_detect.gml
++++ b/scripts/scr_ext_detect/scr_ext_detect.gml
+@@ -126,7 +126,44 @@ function scr_ext_find_vic_writes() {
+         }
+ 
+         switch (_op.mn) {
+-            case "LDA": _ra = _imm; break;
++            case "LDA":
++                _ra = _imm;
++                // Read-modify-write of a VIC / CIA register: start from its power-on value
++                if (_op.mode == EXT_MODE_ABS) {
++                    var _src = scr_ext_peek16(_a + 1);
++                    if (_src == 0xD011) {
++                        _ra = 0x1B;
++                    }
++                    else if (_src == 0xD016) {
++                        _ra = 0xC8;
++                    }
++                    else if (_src == 0xD018) {
++                        _ra = 0x15;
++                    }
++                    else if (_src == 0xDD00) {
++                        _ra = 0x97;
++                    }
++                }
++                break;
++            case "AND":
++            case "ORA":
++            case "EOR":
++                // Constant folding: LDA $D011 / ORA #$20 / STA $D011 is understood
++                if (_op.mode == EXT_MODE_IMM && _ra >= 0) {
++                    if (_op.mn == "AND") {
++                        _ra = _ra & _imm;
++                    }
++                    else if (_op.mn == "ORA") {
++                        _ra = _ra | _imm;
++                    }
++                    else {
++                        _ra = _ra ^ _imm;
++                    }
++                }
++                else {
++                    _ra = -1;
++                }
++                break;
+             case "LDX": _rx = _imm; break;
+             case "LDY": _ry = _imm; break;
+             case "TAX": _rx = _ra; break;
+@@ -143,7 +180,7 @@ function scr_ext_find_vic_writes() {
+                 _ra = -1;
+                 _rx = -1;
+                 break;
+-            case "ADC": case "SBC": case "AND": case "ORA": case "EOR": case "PLA":
++            case "ADC": case "SBC": case "PLA":
+             case "ANC": case "ALR": case "ARR": case "ISC": case "RRA": case "SLO":
+             case "SRE": case "RLA": case "ANE": case "LXA": case "LAS":
+                 _ra = -1;
+@@ -270,7 +307,7 @@ function scr_ext_apply_vic_clues(_writes) {
+ 
+         // Sprite pointers: screen + $3F8..$3FF
+         if (_w.target >= 0x0400 && (_w.target & 0x3FF) >= 0x3F8) {
+-            if (_w.target < 0xD000 || _w.target >= 0xE000) {
++            if ((_w.target < 0xD000 || _w.target >= 0xE000) && _w.target < 0xFFF8) {
+                 var _sp = (_w.target & 0xC000) + _w.value * 64;
+                 var _smode = EXT_GFX_SPR_HR;
+                 if (_spr_mc) {
+@@ -315,6 +352,9 @@ function scr_ext_jump_finding(_index) {
+     gfx_dirty = true;
+     cursor_addr = _c.addr;
+     scr_ext_views_to(_c.addr);
++    if (_c.kind == "Bitmap" && _c.scr < 0) {
++        scr_ext_gfx_find_colours();
++    }
+     status_text = "Finding " + string(_index + 1) + "/" + string(array_length(findings)) + ": " + scr_ext_finding_text(_c);
+     if (_c.kind == "SID music" && _c.init >= 0) {
+         scr_ext_sid_start(_c.init, _c.play, 0);
+@@ -394,6 +434,27 @@ function scr_ext_build_findings() {
+         array_push(findings, { addr : _c.addr, len : _c.len, kind : _c.kind, mode : _c.mode, conf : _conf, why : _why, scr : _c.scr, init : -1, play : -1 });
+     }
+ 
++    // ---- Bitmaps found by their layout ----
++    for (var _i = 0; _i < array_length(bitmap_hits); _i++) {
++        var _bh = bitmap_hits[_i];
++        var _dupe = false;
++        for (var _k = 0; _k < array_length(vic_clues); _k++) {
++            if (vic_clues[_k].kind == "Bitmap" && abs(vic_clues[_k].addr - _bh.addr) < 320) {
++                _dupe = true;
++            }
++        }
++        if (!_dupe) {
++            var _bmode = EXT_GFX_BMP_HR;
++            var _mname = "hires";
++            if (_bh.mc) {
++                _bmode = EXT_GFX_BMP_MC;
++                _mname = "multicolour";
++            }
++            array_push(findings, { addr : _bh.addr, len : 8000, kind : "Bitmap", mode : _bmode, conf : _bh.conf,
++                why : _mname + " bitmap layout - cell rows line up (" + string(round(_bh.ratio * 100) / 100) + ")", scr : -1, init : -1, play : -1 });
++        }
++    }
++
+     // ---- Runs of one class: graphics found by shape, text, packed data ----
+     var _a = 0;
+     while (_a < 65536) {
+@@ -405,8 +466,13 @@ function scr_ext_build_findings() {
+         var _len = _b - _a;
+ 
+         if (_cls == EXT_CLS_GFX && _len >= 256) {
+-            // Skip what a VIC clue already covers
++            // Skip what a VIC clue or a detected bitmap already covers
+             var _covered = false;
++            for (var _k = 0; _k < array_length(bitmap_hits); _k++) {
++                if (_a >= bitmap_hits[_k].addr && _a < bitmap_hits[_k].addr + 8000) {
++                    _covered = true;
++                }
++            }
+             for (var _k = 0; _k < array_length(vic_clues); _k++) {
+                 var _vc = vic_clues[_k];
+                 if (_a >= _vc.addr && _a < _vc.addr + _vc.len) {
+@@ -832,3 +898,205 @@ function scr_ext_detect_sid() {
+         _i = _j + 1;
+     }
+ }
++
++// ---------------------------------------------------------------------------
++// 6. Bitmaps by their layout
++// ---------------------------------------------------------------------------
++
++/// @desc scr_ext_bitmap_ratio(base)
++/// A bitmap is 1000 cells of 8 bytes in screen order, so the bottom row of a
++/// cell continues into the top row of the cell 40 further on (the one below it
++/// on screen) much better than into an unrelated cell. Code, charsets, sprites
++/// and packed data show no such preference. Returns below/unrelated (low = bitmap)
++/// or -1 when the block is mostly empty or too noisy inside its cells.
++function scr_ext_bitmap_ratio(_b) {
++    var _pc = global.ext_popcount;
++    var _vb = 0;
++    var _vr = 0;
++    var _vi = 0;
++    var _ink = 0;
++    var _n = 0;
++    for (var _c = 0; _c < 960; _c += 5) {
++        var _a7 = buffer_peek(mem_buf, (_b + _c * 8 + 7) & 0xFFFF, buffer_u8);
++        var _below = buffer_peek(mem_buf, (_b + (_c + 40) * 8) & 0xFFFF, buffer_u8);
++        var _other = buffer_peek(mem_buf, (_b + ((_c + 57) mod 1000) * 8) & 0xFFFF, buffer_u8);
++        _vb += _pc[_a7 ^ _below];
++        _vr += _pc[_a7 ^ _other];
++        _vi += _pc[buffer_peek(mem_buf, (_b + _c * 8 + 3) & 0xFFFF, buffer_u8) ^ buffer_peek(mem_buf, (_b + _c * 8 + 4) & 0xFFFF, buffer_u8)];
++        if (_a7 != 0) {
++            _ink += 1;
++        }
++        _n += 1;
++    }
++    if (_ink * 10 < _n * 3) {
++        return -1;
++    }
++    if (_vi / _n > 3.0) {
++        return -1;
++    }
++    return (_vb + 1) / (_vr + 1);
++}
++
++/// @desc scr_ext_bitmap_r8(base)
++/// Works from any start address: in a bitmap a byte and the byte 8 later are the
++/// same pixel row in neighbouring cells (side by side on screen). In charsets,
++/// sprites, code and packed data, 8 later is unrelated. Low = bitmap, -1 = empty.
++function scr_ext_bitmap_r8(_b) {
++    var _pc = global.ext_popcount;
++    var _vs = 0;
++    var _vf = 0;
++    var _ink = 0;
++    var _n = 0;
++    for (var _k = 0; _k < 7600; _k += 37) {
++        var _i = _b + _k;
++        var _v = buffer_peek(mem_buf, _i & 0xFFFF, buffer_u8);
++        _vs += _pc[_v ^ buffer_peek(mem_buf, (_i + 8) & 0xFFFF, buffer_u8)];
++        _vf += _pc[_v ^ buffer_peek(mem_buf, (_i + 2333) & 0xFFFF, buffer_u8)];
++        if (_v != 0) {
++            _ink += 1;
++        }
++        _n += 1;
++    }
++    if (_ink * 10 < _n * 3) {
++        return -1;
++    }
++    return (_vs + 1) / (_vf + 1);
++}
++
++/// @desc scr_ext_bitmap_is_mc(base)
++/// Multicolour pictures agree more between neighbouring pixel PAIRS than between
++/// neighbouring single pixels (01 / 10 are colours, not edges); hires the reverse.
++function scr_ext_bitmap_is_mc(_b) {
++    var _be = 0;
++    var _bt = 0;
++    var _pe = 0;
++    var _pt = 0;
++    for (var _i = 0; _i < 8000; _i += 3) {
++        var _v = buffer_peek(mem_buf, (_b + _i) & 0xFFFF, buffer_u8);
++        for (var _k = 0; _k < 7; _k++) {
++            _bt += 1;
++            if (((_v >> _k) & 1) == ((_v >> (_k + 1)) & 1)) {
++                _be += 1;
++            }
++        }
++        for (var _k = 0; _k < 3; _k++) {
++            _pt += 1;
++            if (((_v >> (_k * 2)) & 3) == ((_v >> (_k * 2 + 2)) & 3)) {
++                _pe += 1;
++            }
++        }
++    }
++    return (_pe / _pt) > (_be / _bt);
++}
++
++/// @desc scr_ext_bitmap_refine(base, mc)
++/// Exact start: +/- one character row in cells, then +/- 7 bytes, by the same
++/// smoothness score Align [L] uses.
++function scr_ext_bitmap_refine(_b, _mc) {
++    var _best = _b;
++    var _best_s = scr_ext_gfx_align_score(_b, _mc);
++    for (var _o = -320; _o <= 320; _o += 8) {
++        var _c = _b + _o;
++        if (_c < 0 || _c + 8000 > 65536) {
++            continue;
++        }
++        var _s = scr_ext_gfx_align_score(_c, _mc);
++        if (_s >= 0 && (_best_s < 0 || _s < _best_s)) {
++            _best_s = _s;
++            _best = _c;
++        }
++    }
++    var _coarse = _best;
++    for (var _f = -7; _f <= 7; _f++) {
++        var _c2 = _coarse + _f;
++        if (_c2 < 0 || _c2 + 8000 > 65536) {
++            continue;
++        }
++        var _s2 = scr_ext_gfx_align_score(_c2, _mc);
++        if (_s2 >= 0 && (_best_s < 0 || _s2 < _best_s)) {
++            _best_s = _s2;
++            _best = _c2;
++        }
++    }
++    return _best;
++}
++
++/// @desc scr_ext_detect_bitmaps()
++/// Scans loaded memory in 64-byte steps for 8000-byte bitmaps, refines each
++/// hit to its exact start, marks it blue and records it in bitmap_hits.
++function scr_ext_detect_bitmaps() {
++    bitmap_hits = [];
++    var _cand = [];
++    for (var _b = 0; _b + 8000 <= 65536; _b += 64) {
++        if (buffer_peek(loaded_buf, _b, buffer_u8) == 0) {
++            continue;
++        }
++        if (buffer_peek(loaded_buf, _b + 3999, buffer_u8) == 0 || buffer_peek(loaded_buf, _b + 7999, buffer_u8) == 0) {
++            continue;
++        }
++        if (buffer_peek(cls_buf, _b + 4000, buffer_u8) == EXT_CLS_SURE) {
++            continue;
++        }
++        // Either test can flag it: cell-below (needs the right phase) or
++        // side-by-side (any phase). The better of the two is kept as its score.
++        var _r = scr_ext_bitmap_ratio(_b);
++        var _r8 = scr_ext_bitmap_r8(_b);
++        var _score = -1;
++        if (_r >= 0 && _r < 0.8) {
++            _score = _r;
++        }
++        if (_r8 >= 0 && _r8 < 0.8) {
++            if (_score < 0 || _r8 < _score) {
++                _score = _r8;
++            }
++        }
++        if (_score >= 0) {
++            array_push(_cand, { addr : _b, ratio : _score });
++        }
++    }
++
++    // One picture per cluster of hits: the best one, refined to its exact start
++    var _i = 0;
++    var _n = array_length(_cand);
++    while (_i < _n) {
++        var _j = _i;
++        var _best = _i;
++        while (_j + 1 < _n && _cand[_j + 1].addr - _cand[_i].addr < 8000) {
++            _j++;
++            if (_cand[_j].ratio < _cand[_best].ratio) {
++                _best = _j;
++            }
++        }
++        // A run of hits longer than one picture: skip what starts inside the last one
++        var _found = array_length(bitmap_hits);
++        if (_found > 0) {
++            if (_cand[_i].addr < bitmap_hits[_found - 1].addr + 8000) {
++                _i = _j + 1;
++                continue;
++            }
++        }
++        var _mc = scr_ext_bitmap_is_mc(_cand[_best].addr);
++        var _base = scr_ext_bitmap_refine(_cand[_best].addr, _mc);
++        var _ratio = scr_ext_bitmap_ratio(_base);
++        var _ratio8 = scr_ext_bitmap_r8(_base);
++        if (_ratio < 0 || (_ratio8 >= 0 && _ratio8 < _ratio)) {
++            _ratio = _ratio8;
++        }
++        if (_ratio < 0) {
++            _ratio = _cand[_best].ratio;
++        }
++        var _conf = 55;
++        if (_ratio <= 0.65) {
++            _conf = 70;
++        }
++        if (_ratio <= 0.5) {
++            _conf = 85;
++        }
++        if (_ratio <= 0.35) {
++            _conf = 95;
++        }
++        array_push(bitmap_hits, { addr : _base, mc : _mc, ratio : _ratio, conf : _conf });
++        scr_ext_mark_unknown(_base, 8000, EXT_CLS_GFX);
++        _i = _j + 1;
++    }
++}
