@@ -170,6 +170,7 @@ function scr_ext_d64_load_entry(_index, _overlay) {
         return false;
     }
     cpu_active = false;
+    project_path = "";
     var _f = d64_files[_index];
     var _res = scr_ext_d64_extract(_f.track, _f.sector);
 

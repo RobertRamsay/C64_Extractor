@@ -232,7 +232,11 @@ if (keyboard_check(vk_control) && keyboard_check_pressed(ord("D"))) {
     scr_ext_do_action("deselect", false);
 }
 if (keyboard_check(vk_control) && keyboard_check_pressed(ord("S"))) {
-    scr_ext_do_action("saveproject", false);
+    // Ctrl+S saves over the open project, Ctrl+Shift+S always asks
+    scr_ext_do_action("saveproject", _shift);
+}
+if (autosave_timer > 0) {
+    autosave_timer -= 1;
 }
 if (keyboard_check_pressed(ord("L")) && !keyboard_check(vk_control)) {
     scr_ext_gfx_do_button({ action : "galign", arg : 0 }, false);

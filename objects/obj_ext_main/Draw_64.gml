@@ -20,7 +20,11 @@ for (var _i = 0; _i < array_length(buttons); _i++) {
     scr_ext_draw_button(buttons[_i], false);
 }
 draw_set_colour(col_dim);
-if (toolbar_help_x < gui_w - 200) {
+if (autosave_timer > 0) {
+    draw_set_colour(scr_ext_cls_colour(EXT_CLS_LIKELY));
+    draw_text(toolbar_help_x, 12, "[autosaving]  " + filename_name(project_path));
+}
+else if (toolbar_help_x < gui_w - 200) {
     draw_text(toolbar_help_x, 12, "J clue  W region  B/E sel  1-6 modes  L align  K/M colours  arrows/Shift: nudge");
 }
 

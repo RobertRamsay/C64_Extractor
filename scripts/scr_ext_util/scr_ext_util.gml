@@ -109,7 +109,7 @@ function scr_ext_do_action(_action, _overlay) {
             break;
 
         case "saveproject":
-            scr_ext_project_save();
+            scr_ext_project_save(_overlay);
             break;
 
         case "deselect":

@@ -1,0 +1,236 @@
+diff --git a/objects/obj_ext_main/Create_0.gml b/objects/obj_ext_main/Create_0.gml
+index c62a3b8..a6e1379 100644
+--- a/objects/obj_ext_main/Create_0.gml
++++ b/objects/obj_ext_main/Create_0.gml
+@@ -37,6 +37,8 @@ verdict_text = "";
+ // ---- D64 state ----
+ d64_buf = -1;
+ d64_path = "";         // the open D64, remembered in project files
++project_path = "";     // set by save / load: unpacks auto-save over it
++autosave_timer = 0;    // frames left to show [autosaving]
+ d64_tracks = 35;
+ d64_disk_name = "";
+ d64_files = [];         // { name, type, typename, track, sector, blocks }
+diff --git a/objects/obj_ext_main/Draw_64.gml b/objects/obj_ext_main/Draw_64.gml
+index 1736051..a5493b3 100644
+--- a/objects/obj_ext_main/Draw_64.gml
++++ b/objects/obj_ext_main/Draw_64.gml
+@@ -20,7 +20,11 @@ for (var _i = 0; _i < array_length(buttons); _i++) {
+     scr_ext_draw_button(buttons[_i], false);
+ }
+ draw_set_colour(col_dim);
+-if (toolbar_help_x < gui_w - 200) {
++if (autosave_timer > 0) {
++    draw_set_colour(scr_ext_cls_colour(EXT_CLS_LIKELY));
++    draw_text(toolbar_help_x, 12, "[autosaving]  " + filename_name(project_path));
++}
++else if (toolbar_help_x < gui_w - 200) {
+     draw_text(toolbar_help_x, 12, "J clue  W region  B/E sel  1-6 modes  L align  K/M colours  arrows/Shift: nudge");
+ }
+ 
+diff --git a/objects/obj_ext_main/Step_0.gml b/objects/obj_ext_main/Step_0.gml
+index ba7531d..d9f5406 100644
+--- a/objects/obj_ext_main/Step_0.gml
++++ b/objects/obj_ext_main/Step_0.gml
+@@ -232,7 +232,11 @@ if (keyboard_check(vk_control) && keyboard_check_pressed(ord("D"))) {
+     scr_ext_do_action("deselect", false);
+ }
+ if (keyboard_check(vk_control) && keyboard_check_pressed(ord("S"))) {
+-    scr_ext_do_action("saveproject", false);
++    // Ctrl+S saves over the open project, Ctrl+Shift+S always asks
++    scr_ext_do_action("saveproject", _shift);
++}
++if (autosave_timer > 0) {
++    autosave_timer -= 1;
+ }
+ if (keyboard_check_pressed(ord("L")) && !keyboard_check(vk_control)) {
+     scr_ext_gfx_do_button({ action : "galign", arg : 0 }, false);
+diff --git a/scripts/scr_ext_cpu/scr_ext_cpu.gml b/scripts/scr_ext_cpu/scr_ext_cpu.gml
+index 8c358c4..55fdaf8 100644
+--- a/scripts/scr_ext_cpu/scr_ext_cpu.gml
++++ b/scripts/scr_ext_cpu/scr_ext_cpu.gml
+@@ -1044,6 +1044,7 @@ function scr_ext_decrunch_finish(_result, _pc) {
+         return;
+     }
+     status_text = "Unpacked: start $" + scr_ext_hex(_start, 4) + " after " + string(cpu.steps) + " instructions (" + string(cpu.writes) + " bytes written, stage " + string(cpu.stage) + ").";
++    scr_ext_keep_unpacked();
+ }
+ 
+ /// @desc scr_ext_unpack_entry()
+diff --git a/scripts/scr_ext_d64/scr_ext_d64.gml b/scripts/scr_ext_d64/scr_ext_d64.gml
+index 766e55f..3fa9036 100644
+--- a/scripts/scr_ext_d64/scr_ext_d64.gml
++++ b/scripts/scr_ext_d64/scr_ext_d64.gml
+@@ -170,6 +170,7 @@ function scr_ext_d64_load_entry(_index, _overlay) {
+         return false;
+     }
+     cpu_active = false;
++    project_path = "";
+     var _f = d64_files[_index];
+     var _res = scr_ext_d64_extract(_f.track, _f.sector);
+ 
+diff --git a/scripts/scr_ext_gfx/scr_ext_gfx.gml b/scripts/scr_ext_gfx/scr_ext_gfx.gml
+index f0ecb62..3d2f20d 100644
+--- a/scripts/scr_ext_gfx/scr_ext_gfx.gml
++++ b/scripts/scr_ext_gfx/scr_ext_gfx.gml
+@@ -99,9 +99,9 @@ function scr_ext_gfx_build_buttons() {
+     // Row 4: nudge the start address (hold to repeat) and auto-align
+     _bx = gfx_x;
+     _by = gfx_y + 84;
+-    var _labels4  = ["-1 cell", "-1 byte", "+1 byte", "+1 cell", "Align [L]", "Export sprites"];
+-    var _actions4 = ["gnudge",  "gnudge",  "gnudge",  "gnudge",  "galign",    "gexpspr"];
+-    var _args4    = [-2,        -1,        1,         2,         0,           0];
++    var _labels4  = ["-1 cell", "-1 byte", "+1 byte", "+1 cell", "Align [L]", "Export sprites", "Export PNG"];
++    var _actions4 = ["gnudge",  "gnudge",  "gnudge",  "gnudge",  "galign",    "gexpspr",        "gexppng"];
++    var _args4    = [-2,        -1,        1,         2,         0,           0,                0];
+     for (var _i = 0; _i < array_length(_labels4); _i++) {
+         var _w4 = string_width(_labels4[_i]) + 18;
+         array_push(gfx_buttons, { bx : _bx, by : _by, bw : _w4, bh : 22, label : _labels4[_i], action : _actions4[_i], arg : _args4[_i] });
+@@ -321,6 +321,10 @@ function scr_ext_gfx_do_button(_b, _shift) {
+             scr_ext_gfx_export_sprites();
+             break;
+ 
++        case "gexppng":
++            scr_ext_gfx_export_png();
++            break;
++
+         case "ggrid":
+             if (gfx_grid) {
+                 gfx_grid = false;
+@@ -1152,3 +1156,27 @@ function scr_ext_gfx_export_sprites() {
+         status_text += " - capped at 64, the import limit";
+     }
+ }
++
++/// @desc scr_ext_gfx_export_png()
++/// Saves exactly what the viewer shows as a PNG, in any mode: a bitmap comes out
++/// at 320 x 200 with its colours, chars and sprites as the current grid.
++function scr_ext_gfx_export_png() {
++    var _default = "view_" + scr_ext_hex(gfx_addr, 4) + ".png";
++    if (scr_ext_gfx_is_bitmap()) {
++        _default = "bitmap_" + scr_ext_hex(gfx_addr, 4) + ".png";
++    }
++    var _path = get_save_filename("PNG image|*.png", _default);
++    io_clear();
++    last_win_w = 0;
++    map_dirty = true;
++    gfx_dirty = true;
++    if (_path == "") {
++        return;
++    }
++    if (string_lower(filename_ext(_path)) != ".png") {
++        _path += ".png";
++    }
++    scr_ext_gfx_render();
++    surface_save(gfx_surf, _path);
++    status_text = "Saved " + filename_name(_path) + " (" + string(gfx_img_w) + " x " + string(gfx_img_h) + ").";
++}
+diff --git a/scripts/scr_ext_loader/scr_ext_loader.gml b/scripts/scr_ext_loader/scr_ext_loader.gml
+index e4fe75b..e75996e 100644
+--- a/scripts/scr_ext_loader/scr_ext_loader.gml
++++ b/scripts/scr_ext_loader/scr_ext_loader.gml
+@@ -27,6 +27,8 @@ function scr_ext_load_path(_path, _overlay) {
+     if (_ext == ".c64x") {
+         return scr_ext_project_load(_path);
+     }
++    // A different file: the open project no longer matches memory
++    project_path = "";
+     if (_ext == ".crt" || _ext == ".tap" || _ext == ".t64") {
+         status_text = string_upper(_ext) + " files aren't supported yet (later phase).";
+         return false;
+diff --git a/scripts/scr_ext_project/scr_ext_project.gml b/scripts/scr_ext_project/scr_ext_project.gml
+index 6536396..5938ae1 100644
+--- a/scripts/scr_ext_project/scr_ext_project.gml
++++ b/scripts/scr_ext_project/scr_ext_project.gml
+@@ -6,10 +6,22 @@
+ 
+ #macro EXT_PROJECT_VERSION 1
+ 
+-/// @desc scr_ext_project_save()
+-function scr_ext_project_save() {
++/// @desc scr_ext_project_save(save_as)
++/// Saves over the current project when there is one (unless save_as),
++/// otherwise asks for a file name.
++function scr_ext_project_save(_save_as) {
++    if (project_path != "" && !_save_as) {
++        if (scr_ext_project_write(project_path)) {
++            autosave_timer = 120;
++            status_text = "[autosaving] Project saved over " + filename_name(project_path);
++        }
++        return;
++    }
+     var _default = "project.c64x";
+-    if (file_name != "") {
++    if (project_path != "") {
++        _default = filename_name(project_path);
++    }
++    else if (file_name != "") {
+         _default = filename_change_ext(file_name, ".c64x");
+     }
+     var _path = get_save_filename("Extractor project|*.c64x", _default);
+@@ -23,7 +35,35 @@ function scr_ext_project_save() {
+     if (string_lower(filename_ext(_path)) != ".c64x") {
+         _path += ".c64x";
+     }
++    if (scr_ext_project_write(_path)) {
++        project_path = _path;
++        status_text = "Project saved: " + filename_name(_path);
++    }
++}
++
++/// @desc scr_ext_keep_unpacked()
++/// Called when an unpack finishes so it never has to run again:
++/// saves over the open project, or offers to create one.
++function scr_ext_keep_unpacked() {
++    if (project_path != "") {
++        if (scr_ext_project_write(project_path)) {
++            autosave_timer = 120;
++            status_text += "  [autosaving] -> " + filename_name(project_path);
++        }
++        return;
++    }
++    var _yes = show_question("Unpacked successfully.\n\nSave a project now so it opens already unpacked next time?");
++    io_clear();
++    last_win_w = 0;
++    map_dirty = true;
++    gfx_dirty = true;
++    if (_yes == true || _yes == 1) {
++        scr_ext_project_save(true);
++    }
++}
+ 
++/// @desc scr_ext_project_write(path) - writes the project file, returns success
++function scr_ext_project_write(_path) {
+     var _d64 = "";
+     if (buffer_exists(d64_buf)) {
+         _d64 = d64_path;
+@@ -64,7 +104,7 @@ function scr_ext_project_save() {
+     buffer_write(_buf, buffer_string, _json);
+     buffer_save(_buf, _path);
+     buffer_delete(_buf);
+-    status_text = "Project saved: " + filename_name(_path);
++    return file_exists(_path);
+ }
+ 
+ /// @desc scr_ext_project_load(path)
+@@ -171,6 +211,7 @@ function scr_ext_project_load(_path) {
+     sel_dragging = false;
+     map_dirty = true;
+ 
++    project_path = _path;
+     status_text = "Project loaded: " + filename_name(_path);
+     return true;
+ }
+diff --git a/scripts/scr_ext_util/scr_ext_util.gml b/scripts/scr_ext_util/scr_ext_util.gml
+index 2156bea..d2df2ce 100644
+--- a/scripts/scr_ext_util/scr_ext_util.gml
++++ b/scripts/scr_ext_util/scr_ext_util.gml
+@@ -109,7 +109,7 @@ function scr_ext_do_action(_action, _overlay) {
+             break;
+ 
+         case "saveproject":
+-            scr_ext_project_save();
++            scr_ext_project_save(_overlay);
+             break;
+ 
+         case "deselect":

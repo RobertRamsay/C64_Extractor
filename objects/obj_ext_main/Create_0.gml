@@ -37,6 +37,8 @@ verdict_text = "";
 // ---- D64 state ----
 d64_buf = -1;
 d64_path = "";         // the open D64, remembered in project files
+project_path = "";     // set by save / load: unpacks auto-save over it
+autosave_timer = 0;    // frames left to show [autosaving]
 d64_tracks = 35;
 d64_disk_name = "";
 d64_files = [];         // { name, type, typename, track, sector, blocks }

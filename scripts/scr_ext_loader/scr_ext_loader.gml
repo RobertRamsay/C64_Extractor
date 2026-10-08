@@ -27,6 +27,8 @@ function scr_ext_load_path(_path, _overlay) {
     if (_ext == ".c64x") {
         return scr_ext_project_load(_path);
     }
+    // A different file: the open project no longer matches memory
+    project_path = "";
     if (_ext == ".crt" || _ext == ".tap" || _ext == ".t64") {
         status_text = string_upper(_ext) + " files aren't supported yet (later phase).";
         return false;

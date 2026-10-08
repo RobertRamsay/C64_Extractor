@@ -6,10 +6,22 @@
 
 #macro EXT_PROJECT_VERSION 1
 
-/// @desc scr_ext_project_save()
-function scr_ext_project_save() {
+/// @desc scr_ext_project_save(save_as)
+/// Saves over the current project when there is one (unless save_as),
+/// otherwise asks for a file name.
+function scr_ext_project_save(_save_as) {
+    if (project_path != "" && !_save_as) {
+        if (scr_ext_project_write(project_path)) {
+            autosave_timer = 120;
+            status_text = "[autosaving] Project saved over " + filename_name(project_path);
+        }
+        return;
+    }
     var _default = "project.c64x";
-    if (file_name != "") {
+    if (project_path != "") {
+        _default = filename_name(project_path);
+    }
+    else if (file_name != "") {
         _default = filename_change_ext(file_name, ".c64x");
     }
     var _path = get_save_filename("Extractor project|*.c64x", _default);
@@ -23,7 +35,35 @@ function scr_ext_project_save() {
     if (string_lower(filename_ext(_path)) != ".c64x") {
         _path += ".c64x";
     }
+    if (scr_ext_project_write(_path)) {
+        project_path = _path;
+        status_text = "Project saved: " + filename_name(_path);
+    }
+}
 
+/// @desc scr_ext_keep_unpacked()
+/// Called when an unpack finishes so it never has to run again:
+/// saves over the open project, or offers to create one.
+function scr_ext_keep_unpacked() {
+    if (project_path != "") {
+        if (scr_ext_project_write(project_path)) {
+            autosave_timer = 120;
+            status_text += "  [autosaving] -> " + filename_name(project_path);
+        }
+        return;
+    }
+    var _yes = show_question("Unpacked successfully.\n\nSave a project now so it opens already unpacked next time?");
+    io_clear();
+    last_win_w = 0;
+    map_dirty = true;
+    gfx_dirty = true;
+    if (_yes == true || _yes == 1) {
+        scr_ext_project_save(true);
+    }
+}
+
+/// @desc scr_ext_project_write(path) - writes the project file, returns success
+function scr_ext_project_write(_path) {
     var _d64 = "";
     if (buffer_exists(d64_buf)) {
         _d64 = d64_path;
@@ -64,7 +104,7 @@ function scr_ext_project_save() {
     buffer_write(_buf, buffer_string, _json);
     buffer_save(_buf, _path);
     buffer_delete(_buf);
-    status_text = "Project saved: " + filename_name(_path);
+    return file_exists(_path);
 }
 
 /// @desc scr_ext_project_load(path)
@@ -171,6 +211,7 @@ function scr_ext_project_load(_path) {
     sel_dragging = false;
     map_dirty = true;
 
+    project_path = _path;
     status_text = "Project loaded: " + filename_name(_path);
     return true;
 }

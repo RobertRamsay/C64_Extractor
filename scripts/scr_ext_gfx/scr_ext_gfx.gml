@@ -99,9 +99,9 @@ function scr_ext_gfx_build_buttons() {
     // Row 4: nudge the start address (hold to repeat) and auto-align
     _bx = gfx_x;
     _by = gfx_y + 84;
-    var _labels4  = ["-1 cell", "-1 byte", "+1 byte", "+1 cell", "Align [L]", "Export sprites"];
-    var _actions4 = ["gnudge",  "gnudge",  "gnudge",  "gnudge",  "galign",    "gexpspr"];
-    var _args4    = [-2,        -1,        1,         2,         0,           0];
+    var _labels4  = ["-1 cell", "-1 byte", "+1 byte", "+1 cell", "Align [L]", "Export sprites", "Export PNG"];
+    var _actions4 = ["gnudge",  "gnudge",  "gnudge",  "gnudge",  "galign",    "gexpspr",        "gexppng"];
+    var _args4    = [-2,        -1,        1,         2,         0,           0,                0];
     for (var _i = 0; _i < array_length(_labels4); _i++) {
         var _w4 = string_width(_labels4[_i]) + 18;
         array_push(gfx_buttons, { bx : _bx, by : _by, bw : _w4, bh : 22, label : _labels4[_i], action : _actions4[_i], arg : _args4[_i] });
@@ -319,6 +319,10 @@ function scr_ext_gfx_do_button(_b, _shift) {
 
         case "gexpspr":
             scr_ext_gfx_export_sprites();
+            break;
+
+        case "gexppng":
+            scr_ext_gfx_export_png();
             break;
 
         case "ggrid":
@@ -1151,4 +1155,28 @@ function scr_ext_gfx_export_sprites() {
     if (_capped) {
         status_text += " - capped at 64, the import limit";
     }
+}
+
+/// @desc scr_ext_gfx_export_png()
+/// Saves exactly what the viewer shows as a PNG, in any mode: a bitmap comes out
+/// at 320 x 200 with its colours, chars and sprites as the current grid.
+function scr_ext_gfx_export_png() {
+    var _default = "view_" + scr_ext_hex(gfx_addr, 4) + ".png";
+    if (scr_ext_gfx_is_bitmap()) {
+        _default = "bitmap_" + scr_ext_hex(gfx_addr, 4) + ".png";
+    }
+    var _path = get_save_filename("PNG image|*.png", _default);
+    io_clear();
+    last_win_w = 0;
+    map_dirty = true;
+    gfx_dirty = true;
+    if (_path == "") {
+        return;
+    }
+    if (string_lower(filename_ext(_path)) != ".png") {
+        _path += ".png";
+    }
+    scr_ext_gfx_render();
+    surface_save(gfx_surf, _path);
+    status_text = "Saved " + filename_name(_path) + " (" + string(gfx_img_w) + " x " + string(gfx_img_h) + ").";
 }
