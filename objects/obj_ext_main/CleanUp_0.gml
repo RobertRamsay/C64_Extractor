@@ -23,3 +23,6 @@ if (surface_exists(gfx_surf)) {
     surface_free(gfx_surf);
 }
 scr_ext_cache_clear();
+if (surface_exists(preview_surf)) {
+    surface_free(preview_surf);
+}

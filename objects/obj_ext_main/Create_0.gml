@@ -73,6 +73,10 @@ disk_results = [];       // { file, fname, cat, kind, addr, len, mode, conf, why
 disk_open = false;
 disk_filter = 0;
 disk_scroll = 0;
+preview_surf = -1;       // hover preview in the disk findings window
+preview_key = "";
+preview_w = 8;
+preview_h = 8;
 clue_index = -1;
 verdict_text = "";
 

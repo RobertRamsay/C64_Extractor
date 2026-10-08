@@ -1,0 +1,282 @@
+diff --git a/objects/obj_ext_main/CleanUp_0.gml b/objects/obj_ext_main/CleanUp_0.gml
+index 392ff76..81a6b9e 100644
+--- a/objects/obj_ext_main/CleanUp_0.gml
++++ b/objects/obj_ext_main/CleanUp_0.gml
+@@ -23,3 +23,6 @@ if (surface_exists(gfx_surf)) {
+     surface_free(gfx_surf);
+ }
+ scr_ext_cache_clear();
++if (surface_exists(preview_surf)) {
++    surface_free(preview_surf);
++}
+diff --git a/objects/obj_ext_main/Create_0.gml b/objects/obj_ext_main/Create_0.gml
+index d8c2ee7..b0f1fa9 100644
+--- a/objects/obj_ext_main/Create_0.gml
++++ b/objects/obj_ext_main/Create_0.gml
+@@ -73,6 +73,10 @@ disk_results = [];       // { file, fname, cat, kind, addr, len, mode, conf, why
+ disk_open = false;
+ disk_filter = 0;
+ disk_scroll = 0;
++preview_surf = -1;       // hover preview in the disk findings window
++preview_key = "";
++preview_w = 8;
++preview_h = 8;
+ clue_index = -1;
+ verdict_text = "";
+ 
+diff --git a/scripts/scr_ext_disk/scr_ext_disk.gml b/scripts/scr_ext_disk/scr_ext_disk.gml
+index e1a1b4a..e26ec39 100644
+--- a/scripts/scr_ext_disk/scr_ext_disk.gml
++++ b/scripts/scr_ext_disk/scr_ext_disk.gml
+@@ -225,7 +225,7 @@ function scr_ext_disk_count(_k) {
+     return _c;
+ }
+ 
+-/// @desc scr_ext_disk_rect() - [x, y, w, h, list_y, rows]
++/// @desc scr_ext_disk_rect() - [x, y, w, h, list_y, rows, preview_y, preview_h]
+ function scr_ext_disk_rect() {
+     var _w = gui_w - 160;
+     if (_w > 1200) {
+@@ -235,8 +235,16 @@ function scr_ext_disk_rect() {
+     var _x = floor((gui_w - _w) / 2);
+     var _y = 60;
+     var _list_y = _y + 80;
+-    var _rows = floor((_h - 80 - 30) / summary_row_h);
+-    return [_x, _y, _w, _h, _list_y, _rows];
++    var _prev_h = floor(_h * 0.34);
++    if (_prev_h > 260) {
++        _prev_h = 260;
++    }
++    var _prev_y = _y + _h - _prev_h - 8;
++    var _rows = floor((_prev_y - 30 - _list_y) / summary_row_h);
++    if (_rows < 3) {
++        _rows = 3;
++    }
++    return [_x, _y, _w, _h, _list_y, _rows, _prev_y, _prev_h];
+ }
+ 
+ /// @desc scr_ext_disk_button_rect(i) - [x, y, w, h] of filter button i (5 = Rescan)
+@@ -394,27 +402,217 @@ function scr_ext_disk_draw() {
+         _shown_to = array_length(_list);
+     }
+     draw_set_colour(col_dim);
+-    draw_text(_x + 14, _y + _h - 24, string(disk_scroll + 1) + "-" + string(_shown_to) + " of " + string(array_length(_list)) + "   " + status_text);
++    draw_text(_x + 14, _r[6] - 24, string(disk_scroll + 1) + "-" + string(_shown_to) + " of " + string(array_length(_list)) + "   (hover a row to preview it below)");
++
++    // ---- Preview strip ----
++    var _hover = -1;
++    for (var _i = 0; _i < _r[5]; _i++) {
++        var _idx = disk_scroll + _i;
++        if (_idx >= array_length(_list)) {
++            break;
++        }
++        var _ry = _r[4] + _i * summary_row_h;
++        if (point_in_rectangle(_mx, _my, _x + 8, _ry, _x + _w - 8, _ry + summary_row_h - 1)) {
++            _hover = _idx;
++        }
++    }
++    scr_ext_disk_preview_draw(_x + 8, _r[6], _w - 16, _r[7], _list, _hover);
+ }
+ 
+ /// @desc scr_ext_disk_progress_draw() - progress bar while scanning
+ function scr_ext_disk_progress_draw() {
+-    var _w = 520;
+-    var _h = 70;
++    var _w = gui_w - 200;
++    if (_w > 900) {
++        _w = 900;
++    }
++    var _tw = _w - 28;
++    var _th = string_height_ext(status_text, line_h, _tw);
++    var _h = 10 + _th + 12 + 16 + 14;
+     var _x = floor((gui_w - _w) / 2);
+     var _y = floor((gui_h - _h) / 2);
+     draw_set_colour(col_panel);
+     draw_rectangle(_x, _y, _x + _w, _y + _h, false);
+     draw_set_colour(col_title);
+     draw_rectangle(_x, _y, _x + _w, _y + _h, true);
+-    draw_text(_x + 14, _y + 10, status_text);
++    draw_text_ext(_x + 14, _y + 10, status_text, line_h, _tw);
+     var _n = array_length(d64_files);
+     var _p = 0;
+     if (_n > 0) {
+         _p = disk_scan_index / _n;
+     }
++    var _by = _y + 10 + _th + 12;
+     draw_set_colour(col_sb_track);
+-    draw_rectangle(_x + 14, _y + 38, _x + _w - 14, _y + 54, false);
++    draw_rectangle(_x + 14, _by, _x + _w - 14, _by + 16, false);
+     draw_set_colour(col_gfx_range);
+-    draw_rectangle(_x + 14, _y + 38, _x + 14 + (_w - 28) * _p, _y + 54, false);
++    draw_rectangle(_x + 14, _by, _x + 14 + (_w - 28) * _p, _by + 16, false);
++}
++
++// ---------------------------------------------------------------------------
++// Hover preview in the disk findings window
++// ---------------------------------------------------------------------------
++
++/// @desc scr_ext_disk_preview_draw(x, y, w, h, list, hover)
++function scr_ext_disk_preview_draw(_x, _y, _w, _h, _list, _hover) {
++    draw_set_colour(col_sb_track);
++    draw_rectangle(_x, _y, _x + _w, _y + _h, false);
++    draw_set_colour(col_border);
++    draw_rectangle(_x, _y, _x + _w, _y + _h, true);
++
++    if (_hover < 0) {
++        draw_set_colour(col_dim);
++        draw_text(_x + 10, _y + 8, "Preview");
++        return;
++    }
++    var _f = _list[_hover];
++    if (_f.cat == EXT_DISK_SID) {
++        draw_set_colour(col_text);
++        draw_text(_x + 10, _y + 8, "\"" + _f.fname + "\"  " + _f.kind + "  $" + scr_ext_hex(_f.addr, 4) + "   " + _f.why);
++        draw_set_colour(col_dim);
++        draw_text(_x + 10, _y + 8 + line_h, "Click the row to open the file - SID music starts playing (P stops it).");
++        return;
++    }
++
++    // The file must be on screen or in the cache to be previewed
++    if (_f.file != d64_selected && !scr_ext_cache_has(_f.file)) {
++        draw_set_colour(col_dim);
++        draw_text(_x + 10, _y + 8, "\"" + _f.fname + "\" isn't cached - click the row to open it.");
++        return;
++    }
++
++    // Re-render only when the hovered result changes (or the surface was lost)
++    var _key = string(_f.file) + ":" + string(_f.addr) + ":" + _f.kind;
++    if (_key != preview_key || !surface_exists(preview_surf)) {
++        var _src = mem_buf;
++        if (_f.file != d64_selected && scr_ext_cache_has(_f.file)) {
++            _src = d64_cache[_f.file].mem;
++        }
++        scr_ext_preview_build(_src, _f.mode, _f.addr, _f.len);
++        preview_key = _key;
++    }
++
++    // Fit the picture into the strip under a one-line caption
++    var _ah = _h - line_h - 16;
++    var _aw = _w - 20;
++    var _scale = floor(_aw / preview_w);
++    var _sh = floor(_ah / preview_h);
++    if (_sh < _scale) {
++        _scale = _sh;
++    }
++    if (_scale < 1) {
++        _scale = min(_aw / preview_w, _ah / preview_h);
++    }
++    if (_scale > 4) {
++        _scale = 4;
++    }
++    draw_set_colour(col_text);
++    var _mode_name = "";
++    if (_f.mode >= 0) {
++        _mode_name = "  " + scr_ext_gfx_mode_name(_f.mode);
++    }
++    draw_text(_x + 10, _y + 6, "\"" + _f.fname + "\"  " + _f.kind + "  $" + scr_ext_hex(_f.addr, 4) + "-$" + scr_ext_hex(_f.addr + _f.len - 1, 4) + _mode_name);
++    draw_surface_ext(preview_surf, _x + 10, _y + line_h + 10, _scale, _scale, 0, c_white, 1);
++}
++
++/// @desc scr_ext_preview_build(source_buffer, mode, addr, length)
++/// Renders a finding into preview_surf with the viewer's colours:
++/// bitmaps 320 x 200, charsets / char graphics as 32 chars per row (up to 256),
++/// sprites 8 per row (up to 16).
++function scr_ext_preview_build(_src, _mode, _addr, _len) {
++    var _mc = false;
++    if (_mode == EXT_GFX_CHAR_MC || _mode == EXT_GFX_SPR_MC || _mode == EXT_GFX_BMP_MC) {
++        _mc = true;
++    }
++    var _spr = false;
++    if (_mode == EXT_GFX_SPR_HR || _mode == EXT_GFX_SPR_MC) {
++        _spr = true;
++    }
++    var _cols = 0;
++    var _rows = 0;
++    var _cw = 8;
++    var _ch = 8;
++    var _cb = 8;
++    var _gap = 0;
++    if (_mode == EXT_GFX_BMP_HR || _mode == EXT_GFX_BMP_MC) {
++        _cols = 40;
++        _rows = 25;
++    }
++    else if (_spr) {
++        var _ns = _len div 64;
++        if (_ns < 1) {
++            _ns = 1;
++        }
++        if (_ns > 16) {
++            _ns = 16;
++        }
++        _cols = min(8, _ns);
++        _rows = ceil(_ns / _cols);
++        _cw = 24;
++        _ch = 21;
++        _cb = 64;
++        _gap = 1;
++    }
++    else {
++        var _nc = _len div 8;
++        if (_nc < 1) {
++            _nc = 1;
++        }
++        if (_nc > 256) {
++            _nc = 256;
++        }
++        _cols = min(32, _nc);
++        _rows = ceil(_nc / _cols);
++    }
++    var _pw = _cw + _gap;
++    var _ph = _ch + _gap;
++    preview_w = _cols * _pw;
++    preview_h = _rows * _ph;
++
++    var _size = preview_w * preview_h * 4;
++    var _buf = buffer_create(_size, buffer_fixed, 1);
++    buffer_fill(_buf, 0, buffer_u32, gfx_gap_u32, _size);
++    var _pal = [c64_pal_u32[gfx_col[0]], c64_pal_u32[gfx_col[1]], c64_pal_u32[gfx_col[2]], c64_pal_u32[gfx_col[3]]];
++    var _bpr = _cw div 8;
++    for (var _cell = 0; _cell < _cols * _rows; _cell++) {
++        var _ox = (_cell mod _cols) * _pw;
++        var _oy = (_cell div _cols) * _ph;
++        var _base = _addr + _cell * _cb;
++        for (var _row = 0; _row < _ch; _row++) {
++            for (var _bc = 0; _bc < _bpr; _bc++) {
++                var _a = _base + _row;
++                if (_spr) {
++                    _a = _base + _row * 3 + _bc;
++                }
++                var _v = buffer_peek(_src, _a & 0xFFFF, buffer_u8);
++                var _off = (((_oy + _row) * preview_w) + _ox + _bc * 8) * 4;
++                if (_mc) {
++                    for (var _p = 0; _p < 4; _p++) {
++                        var _col = _pal[(_v >> (6 - _p * 2)) & 3];
++                        buffer_poke(_buf, _off + _p * 8, buffer_u32, _col);
++                        buffer_poke(_buf, _off + _p * 8 + 4, buffer_u32, _col);
++                    }
++                }
++                else {
++                    for (var _bit = 0; _bit < 8; _bit++) {
++                        if (((_v >> (7 - _bit)) & 1) == 1) {
++                            buffer_poke(_buf, _off + _bit * 4, buffer_u32, _pal[3]);
++                        }
++                        else {
++                            buffer_poke(_buf, _off + _bit * 4, buffer_u32, _pal[0]);
++                        }
++                    }
++                }
++            }
++        }
++    }
++    if (surface_exists(preview_surf)) {
++        if (surface_get_width(preview_surf) != preview_w || surface_get_height(preview_surf) != preview_h) {
++            surface_free(preview_surf);
++            preview_surf = -1;
++        }
++    }
++    if (!surface_exists(preview_surf)) {
++        preview_surf = surface_create(preview_w, preview_h);
++    }
++    buffer_set_surface(_buf, preview_surf, 0);
++    buffer_delete(_buf);
+ }
