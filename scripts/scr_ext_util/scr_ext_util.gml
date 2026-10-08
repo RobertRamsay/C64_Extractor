@@ -112,6 +112,20 @@ function scr_ext_do_action(_action, _overlay) {
             scr_ext_project_save(_overlay);
             break;
 
+        case "saveprojectas":
+            scr_ext_project_save(true);
+            break;
+
+        case "gexport":
+        case "gexppng":
+        case "gexpspr":
+            scr_ext_gfx_do_button({ action : _action, arg : 0 }, false);
+            break;
+
+        case "exit":
+            scr_ext_exit();
+            break;
+
         case "deselect":
             sel_active = false;
             sel_dragging = false;
@@ -261,5 +275,72 @@ function scr_ext_export_selection() {
     }
     if (_missing > 0) {
         status_text += " - " + string(_missing) + " bytes were not loaded (saved as $00)";
+    }
+}
+
+/// @desc scr_ext_exit()
+/// Quits. An open project is saved first; unsaved work gets one question.
+function scr_ext_exit() {
+    cpu_active = false;
+    if (project_path != "") {
+        scr_ext_project_write(project_path);
+        game_end();
+        return;
+    }
+    if (array_length(segments) > 0) {
+        var _quit = show_question("Exit without saving a project?\n\nChoose No to save one first.");
+        io_clear();
+        last_win_w = 0;
+        if (_quit == false || _quit == 0) {
+            scr_ext_project_save(true);
+            if (project_path == "") {
+                return;     // save cancelled: stay open
+            }
+        }
+    }
+    game_end();
+}
+
+/// @desc scr_ext_menu_hit(mx, my) - index of the menu item under the mouse, or -1
+function scr_ext_menu_hit(_mx, _my) {
+    for (var _i = 0; _i < array_length(menu_items); _i++) {
+        var _iy = menu_y + 4 + _i * menu_item_h;
+        if (point_in_rectangle(_mx, _my, menu_x, _iy, menu_x + menu_w, _iy + menu_item_h - 1)) {
+            if (menu_items[_i].action != "") {
+                return _i;
+            }
+            return -1;
+        }
+    }
+    return -1;
+}
+
+/// @desc scr_ext_menu_draw()
+function scr_ext_menu_draw() {
+    var _h = array_length(menu_items) * menu_item_h + 8;
+    draw_set_colour(col_panel);
+    draw_rectangle(menu_x, menu_y, menu_x + menu_w, menu_y + _h, false);
+    draw_set_colour(col_title);
+    draw_rectangle(menu_x, menu_y, menu_x + menu_w, menu_y + _h, true);
+
+    var _hover = scr_ext_menu_hit(device_mouse_x_to_gui(0), device_mouse_y_to_gui(0));
+    for (var _i = 0; _i < array_length(menu_items); _i++) {
+        var _it = menu_items[_i];
+        var _iy = menu_y + 4 + _i * menu_item_h;
+        if (_it.label == "-") {
+            draw_set_colour(col_border);
+            draw_line(menu_x + 8, _iy + menu_item_h / 2, menu_x + menu_w - 8, _iy + menu_item_h / 2);
+            continue;
+        }
+        if (_i == _hover) {
+            draw_set_colour(col_button_on);
+            draw_rectangle(menu_x + 2, _iy, menu_x + menu_w - 2, _iy + menu_item_h - 1, false);
+        }
+        draw_set_colour(col_text);
+        draw_text(menu_x + 12, _iy + 5, _it.label);
+        draw_set_colour(col_dim);
+        draw_set_halign(fa_right);
+        draw_text(menu_x + menu_w - 12, _iy + 5, _it.key);
+        draw_set_halign(fa_left);
     }
 }

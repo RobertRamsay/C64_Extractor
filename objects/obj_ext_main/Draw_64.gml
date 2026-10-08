@@ -13,8 +13,14 @@ draw_set_colour(col_bg);
 draw_rectangle(0, 0, gui_w, gui_h, false);
 draw_set_colour(col_panel);
 draw_rectangle(0, 0, gui_w, top_h, false);
+// Title doubles as the menu button
+var _menu_over = point_in_rectangle(device_mouse_x_to_gui(0), device_mouse_y_to_gui(0), menu_bx, 6, menu_bx + menu_bw, 32);
+if (menu_open || _menu_over) {
+    draw_set_colour(col_button_hi);
+    draw_rectangle(menu_bx, 6, menu_bx + menu_bw, 32, false);
+}
 draw_set_colour(col_text);
-draw_text(ui_pad, 12, "C64 EXTRACTOR");
+draw_text(menu_bx + 10, 12, "= C64 EXTRACTOR");
 
 for (var _i = 0; _i < array_length(buttons); _i++) {
     scr_ext_draw_button(buttons[_i], false);
@@ -274,6 +280,11 @@ for (var _c2 = 0; _c2 < EXT_CLS_COUNT; _c2++) {
     draw_set_colour(col_dim);
     draw_text(_lx + 16, _row_y, scr_ext_cls_name(_c2));
     draw_text(_lx + 160, _row_y, string(cls_counts[_c2]));
+}
+
+// ---- Title menu dropdown ----
+if (menu_open) {
+    scr_ext_menu_draw();
 }
 
 // ---- Colour picker modal (drawn last, over everything) ----

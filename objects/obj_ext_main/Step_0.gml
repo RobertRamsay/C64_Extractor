@@ -54,6 +54,30 @@ if (mouse_wheel_down()) {
     _wheel = 1;
 }
 
+// ---- Title menu: open = it gets every click; a click elsewhere just closes it ----
+if (menu_open) {
+    if (_lmb_pressed) {
+        var _mi = scr_ext_menu_hit(_mx, _my);
+        menu_open = false;
+        if (_mi >= 0) {
+            scr_ext_do_action(menu_items[_mi].action, _shift);
+        }
+    }
+    if (keyboard_check_pressed(vk_escape)) {
+        menu_open = false;
+    }
+    io_clear();
+    exit;
+}
+if (_lmb_pressed && point_in_rectangle(_mx, _my, menu_bx, 6, menu_bx + menu_bw, 32)) {
+    menu_open = true;
+    _lmb_pressed = false;
+    exit;
+}
+if (keyboard_check(vk_control) && keyboard_check_pressed(ord("Q"))) {
+    scr_ext_exit();
+}
+
 // ---- Scroll bars (take priority over the panels underneath) ----
 var _n_files = array_length(d64_files);
 

@@ -179,15 +179,33 @@ status_text = "Press O to open a PRG, D64 or 64K memory dump. Hold Shift to over
 
 // ---- Toolbar ----
 buttons = [
-    { bx : 190, by : 8, bw : 96,  bh : 24, label : "Open [O]",         action : "open" },
     { bx : 292, by : 8, bw : 140, bh : 24, label : "Trace cursor [C]", action : "trace" },
     { bx : 438, by : 8, bw : 110, bh : 24, label : "Re-analyse [R]",   action : "analyse" },
     { bx : 554, by : 8, bw : 120, bh : 24, label : "Shade map [V]",    action : "shade" },
     { bx : 680, by : 8, bw : 130, bh : 24, label : "Fullscreen [F11]", action : "fullscreen" },
-    { bx : 816, by : 8, bw : 140, bh : 24, label : "Export sel [X]",   action : "export" },
     { bx : 962, by : 8, bw : 110, bh : 24, label : "Unpack [U]",       action : "unpack" },
-    { bx : 1078, by : 8, bw : 150, bh : 24, label : "Deselect [Ctrl+D]", action : "deselect" },
-    { bx : 1234, by : 8, bw : 150, bh : 24, label : "Save project [Ctrl+S]", action : "saveproject" }
+    { bx : 1078, by : 8, bw : 150, bh : 24, label : "Deselect [Ctrl+D]", action : "deselect" }
+];
+
+// ---- Title menu (top left): file I/O, exports and exit ----
+menu_open = false;
+menu_bx = 0;           // title button rectangle (set by scr_ext_layout)
+menu_bw = 160;
+menu_x = 0;            // dropdown rectangle
+menu_y = 0;
+menu_w = 300;
+menu_item_h = 24;
+menu_items = [
+    { label : "Open file / project...",      key : "O",            action : "open" },
+    { label : "Save project",                key : "Ctrl+S",       action : "saveproject" },
+    { label : "Save project as...",          key : "Ctrl+Shift+S", action : "saveprojectas" },
+    { label : "-",                           key : "",             action : "" },
+    { label : "Export selection (raw .bin/.prg)", key : "X",       action : "export" },
+    { label : "Export picture (.kla / .art)", key : "",            action : "gexport" },
+    { label : "Export PNG",                  key : "",             action : "gexppng" },
+    { label : "Export sprites (.spd / .bin)", key : "",            action : "gexpspr" },
+    { label : "-",                           key : "",             action : "" },
+    { label : "Exit",                        key : "Ctrl+Q",       action : "exit" }
 ];
 
 // ---- Colours ----

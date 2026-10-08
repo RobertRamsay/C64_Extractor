@@ -103,9 +103,20 @@ function scr_ext_layout() {
     info_y = gfx_y + gfx_h + _pad + _title_h;
     info_w = gfx_w;
 
-    // Top toolbar: buttons sized to their labels
+    // Title menu button, then the toolbar buttons sized to their labels
     draw_set_font(-1);
-    var _tbx = 150;
+    menu_bx = ui_pad - 6;
+    menu_bw = string_width("= C64 EXTRACTOR") + 20;
+    menu_x = menu_bx;
+    menu_y = top_h - 4;
+    menu_w = 0;
+    for (var _m = 0; _m < array_length(menu_items); _m++) {
+        var _mw = string_width(menu_items[_m].label) + string_width(menu_items[_m].key) + 60;
+        if (_mw > menu_w) {
+            menu_w = _mw;
+        }
+    }
+    var _tbx = menu_bx + menu_bw + 14;
     for (var _i = 0; _i < array_length(buttons); _i++) {
         buttons[_i].bw = string_width(buttons[_i].label) + 18;
         buttons[_i].bx = _tbx;
