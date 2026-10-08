@@ -1,0 +1,14 @@
+diff --git a/scripts/scr_ext_sid/scr_ext_sid.gml b/scripts/scr_ext_sid/scr_ext_sid.gml
+index f657133..3e730f6 100644
+--- a/scripts/scr_ext_sid/scr_ext_sid.gml
++++ b/scripts/scr_ext_sid/scr_ext_sid.gml
+@@ -134,6 +134,9 @@ function scr_ext_sid_chunk() {
+         scr_ext_sid_stop();
+         return false;
+     }
++    // reSID wrote the samples straight into the buffer's memory: tell GameMaker
++    // how much of it is now in use, or the play queue sees an empty buffer
++    buffer_set_used_size(_buf, _got * 2);
+     audio_queue_sound(sid_queue, _buf, 0, _got * 2);
+     sid_rendered += 4;
+     return true;
