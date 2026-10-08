@@ -91,6 +91,11 @@ function scr_ext_do_action(_action, _overlay) {
 
         case "analyse":
             scr_ext_analyse();
+            summary_open = true;
+            break;
+
+        case "summary":
+            summary_open = true;
             break;
 
         case "fullscreen":
@@ -342,5 +347,123 @@ function scr_ext_menu_draw() {
         draw_set_halign(fa_right);
         draw_text(menu_x + menu_w - 12, _iy + 5, _it.key);
         draw_set_halign(fa_left);
+    }
+}
+
+/// @desc scr_ext_summary_lines() - the header lines above the findings list
+function scr_ext_summary_lines() {
+    var _lines = [];
+    array_push(_lines, "Code: " + string(cls_counts[EXT_CLS_SURE]) + " bytes traced for sure, " + string(cls_counts[EXT_CLS_LIKELY]) + " likely, from " + string(array_length(entries)) + " entry points");
+    array_push(_lines, "Graphics " + string(cls_counts[EXT_CLS_GFX]) + "   Text " + string(cls_counts[EXT_CLS_TEXT]) + "   Packed " + string(cls_counts[EXT_CLS_PACKED]) + "   Not code " + string(cls_counts[EXT_CLS_NOT]) + "  (bytes)");
+    array_push(_lines, string(array_length(vic_clues)) + " locations set by the code's VIC register writes (bank, $D018, sprite pointers)");
+    return _lines;
+}
+
+/// @desc scr_ext_summary_rect() - [x, y, w, h] of the summary window
+function scr_ext_summary_rect() {
+    var _rows = array_length(findings);
+    if (_rows > summary_max_rows) {
+        _rows = summary_max_rows;
+    }
+    if (_rows < 1) {
+        _rows = 1;
+    }
+    var _w = summary_w;
+    if (_w > gui_w - 40) {
+        _w = gui_w - 40;
+    }
+    var _h = 40 + 3 * line_h + 16 + _rows * summary_row_h + 30;
+    var _x = floor((gui_w - _w) / 2);
+    var _y = floor((gui_h - _h) / 2);
+    return [_x, _y, _w, _h];
+}
+
+/// @desc scr_ext_summary_hit(mx, my) - findings row under the mouse, or -1
+function scr_ext_summary_hit(_mx, _my) {
+    var _r = scr_ext_summary_rect();
+    var _ty = _r[1] + 40 + 3 * line_h + 16;
+    var _n = array_length(findings);
+    if (_n > summary_max_rows) {
+        _n = summary_max_rows;
+    }
+    for (var _i = 0; _i < _n; _i++) {
+        var _ry = _ty + _i * summary_row_h;
+        if (point_in_rectangle(_mx, _my, _r[0] + 8, _ry, _r[0] + _r[2] - 8, _ry + summary_row_h - 1)) {
+            return _i;
+        }
+    }
+    return -1;
+}
+
+/// @desc scr_ext_summary_draw()
+function scr_ext_summary_draw() {
+    var _r = scr_ext_summary_rect();
+    var _x = _r[0];
+    var _y = _r[1];
+    var _w = _r[2];
+    var _h = _r[3];
+
+    draw_set_alpha(0.55);
+    draw_set_colour(c_black);
+    draw_rectangle(0, 0, gui_w, gui_h, false);
+    draw_set_alpha(1);
+    draw_set_colour(col_panel);
+    draw_rectangle(_x, _y, _x + _w, _y + _h, false);
+    draw_set_colour(col_title);
+    draw_rectangle(_x, _y, _x + _w, _y + _h, true);
+    draw_text(_x + 14, _y + 10, "ANALYSIS SUMMARY   click a finding to view it - J steps through them later - Esc closes");
+
+    var _hy = _y + 40;
+    var _lines = scr_ext_summary_lines();
+    draw_set_colour(col_dim);
+    for (var _i = 0; _i < array_length(_lines); _i++) {
+        draw_text(_x + 14, _hy + _i * line_h, _lines[_i]);
+    }
+
+    var _ty = _y + 40 + 3 * line_h + 16;
+    var _n = array_length(findings);
+    if (_n == 0) {
+        draw_set_colour(col_text);
+        draw_text(_x + 14, _ty, "No graphics, text or packed data found.");
+        return;
+    }
+    var _shown = _n;
+    if (_shown > summary_max_rows) {
+        _shown = summary_max_rows;
+    }
+    var _hover = scr_ext_summary_hit(device_mouse_x_to_gui(0), device_mouse_y_to_gui(0));
+    for (var _i = 0; _i < _shown; _i++) {
+        var _f = findings[_i];
+        var _ry = _ty + _i * summary_row_h;
+        if (_i == _hover) {
+            draw_set_colour(col_button_on);
+            draw_rectangle(_x + 8, _ry, _x + _w - 8, _ry + summary_row_h - 1, false);
+        }
+        // Confidence in green / yellow / orange
+        var _cc = EXT_CLS_DOUBT;
+        if (_f.conf >= 85) {
+            _cc = EXT_CLS_SURE;
+        }
+        else if (_f.conf >= 60) {
+            _cc = EXT_CLS_LIKELY;
+        }
+        draw_set_colour(scr_ext_cls_colour(_cc));
+        draw_set_halign(fa_right);
+        draw_text(_x + 62, _ry + 3, string(_f.conf) + "%");
+        draw_set_halign(fa_left);
+        draw_set_colour(col_text);
+        draw_text(_x + 76, _ry + 3, _f.kind);
+        draw_text(_x + 270, _ry + 3, "$" + scr_ext_hex(_f.addr, 4) + "-$" + scr_ext_hex(_f.addr + _f.len - 1, 4));
+        var _mode_name = "";
+        if (_f.mode >= 0) {
+            _mode_name = scr_ext_gfx_mode_name(_f.mode);
+        }
+        draw_text(_x + 410, _ry + 3, _mode_name);
+        draw_set_colour(col_dim);
+        draw_text(_x + 520, _ry + 3, _f.why);
+    }
+    if (_n > _shown) {
+        draw_set_colour(col_dim);
+        draw_text(_x + 14, _ty + _shown * summary_row_h + 4, "+ " + string(_n - _shown) + " more (lower confidence) - J reaches them too");
     }
 }

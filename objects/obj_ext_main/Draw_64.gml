@@ -199,8 +199,26 @@ for (var _r = 0; _r < dir_rows; _r++) {
         draw_text(dir_x + 346, _fy, "SYS" + string(_f.sys));
     }
     if (_f.packed) {
-        draw_set_colour(scr_ext_cls_colour(EXT_CLS_PACKED));
-        draw_text(dir_x + 420, _fy, "PACKED");
+        // Once unpacked (on screen now, or kept in the project) it says so in yellow
+        var _unpacked = false;
+        if (_idx == d64_selected) {
+            if (string_pos("unpacked", file_kind) > 0) {
+                _unpacked = true;
+            }
+        }
+        else if (scr_ext_cache_has(_idx)) {
+            if (string_pos("unpacked", d64_cache[_idx].file_kind) > 0) {
+                _unpacked = true;
+            }
+        }
+        if (_unpacked) {
+            draw_set_colour(scr_ext_cls_colour(EXT_CLS_LIKELY));
+            draw_text(dir_x + 420, _fy, "UNPACKED");
+        }
+        else {
+            draw_set_colour(scr_ext_cls_colour(EXT_CLS_PACKED));
+            draw_text(dir_x + 420, _fy, "PACKED");
+        }
     }
 }
 scr_ext_sb_draw(sb_dir);
@@ -280,6 +298,11 @@ for (var _c2 = 0; _c2 < EXT_CLS_COUNT; _c2++) {
     draw_set_colour(col_dim);
     draw_text(_lx + 16, _row_y, scr_ext_cls_name(_c2));
     draw_text(_lx + 160, _row_y, string(cls_counts[_c2]));
+}
+
+// ---- Analysis summary ----
+if (summary_open) {
+    scr_ext_summary_draw();
 }
 
 // ---- Title menu dropdown ----

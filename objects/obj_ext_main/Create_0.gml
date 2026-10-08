@@ -30,7 +30,15 @@ segments = [];          // { start, finish, name }
 entries = [];           // { addr, strong, why }
 manual_entries = [];    // addresses traced by hand with C
 cls_counts = array_create(EXT_CLS_COUNT, 0);
-vic_clues = [];          // { addr, len, kind, mode, why }
+vic_clues = [];          // { addr, len, kind, mode, why, scr, conf }
+clue_base_conf = 100;    // confidence given to clues from the write being processed
+findings = [];           // { addr, len, kind, mode, conf, why, scr } best first
+summary_open = false;    // analysis summary window
+summary_x = 0;
+summary_y = 0;
+summary_w = 900;
+summary_row_h = 22;
+summary_max_rows = 20;
 clue_index = -1;
 verdict_text = "";
 
@@ -184,7 +192,8 @@ buttons = [
     { bx : 554, by : 8, bw : 120, bh : 24, label : "Shade map [V]",    action : "shade" },
     { bx : 680, by : 8, bw : 130, bh : 24, label : "Fullscreen [F11]", action : "fullscreen" },
     { bx : 962, by : 8, bw : 110, bh : 24, label : "Unpack [U]",       action : "unpack" },
-    { bx : 1078, by : 8, bw : 150, bh : 24, label : "Deselect [Ctrl+D]", action : "deselect" }
+    { bx : 1078, by : 8, bw : 150, bh : 24, label : "Deselect [Ctrl+D]", action : "deselect" },
+    { bx : 1234, by : 8, bw : 120, bh : 24, label : "Findings [N]",     action : "summary" }
 ];
 
 // ---- Title menu (top left): file I/O, exports and exit ----

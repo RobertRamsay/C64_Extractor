@@ -43,10 +43,11 @@ function scr_ext_analyse() {
     var _loaded = 65536 - cls_counts[EXT_CLS_NONE];
     verdict_text = "";
     if (_loaded > 0 && cls_counts[EXT_CLS_PACKED] * 10 >= _loaded * 3) {
-        verdict_text = "Mostly packed data - this file is crunched. Load a VICE memory dump taken after it decrunches to see inside.";
+        verdict_text = "Mostly packed data - this file is crunched. Press U to unpack it.";
     }
-    else if (array_length(vic_clues) > 0) {
-        verdict_text = string(array_length(vic_clues)) + " VIC clues from the code (screen / charset / bitmap / sprites) - press J to step through them.";
+    scr_ext_build_findings();
+    if (verdict_text == "" && array_length(findings) > 0) {
+        verdict_text = string(array_length(findings)) + " findings (" + string(array_length(vic_clues)) + " from VIC registers in the code) - N shows the summary, J steps through them.";
     }
     map_dirty = true;
 }

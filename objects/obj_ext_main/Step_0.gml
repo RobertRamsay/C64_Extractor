@@ -54,6 +54,26 @@ if (mouse_wheel_down()) {
     _wheel = 1;
 }
 
+// ---- Analysis summary window: takes every click while open ----
+if (summary_open) {
+    if (_lmb_pressed) {
+        var _si = scr_ext_summary_hit(_mx, _my);
+        summary_open = false;
+        if (_si >= 0) {
+            scr_ext_jump_finding(_si);
+        }
+    }
+    if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(ord("N"))) {
+        summary_open = false;
+    }
+    io_clear();
+    exit;
+}
+if (keyboard_check_pressed(ord("N")) && !keyboard_check(vk_control)) {
+    summary_open = true;
+    exit;
+}
+
 // ---- Title menu: open = it gets every click; a click elsewhere just closes it ----
 if (menu_open) {
     if (_lmb_pressed) {
