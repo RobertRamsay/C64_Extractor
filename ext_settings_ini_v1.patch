@@ -1,0 +1,134 @@
+diff --git a/objects/obj_ext_main/Create_0.gml b/objects/obj_ext_main/Create_0.gml
+index ff97a66..e1d0b50 100644
+--- a/objects/obj_ext_main/Create_0.gml
++++ b/objects/obj_ext_main/Create_0.gml
+@@ -254,6 +254,7 @@ menu_base = [
+ ];
+ menu_items = [];           // menu_base + recent projects (scr_ext_menu_build)
+ recent_max = 8;
++settings_ini = "";        // set by scr_ext_settings_init
+ 
+ // ---- Colours ----
+ col_bg        = make_colour_rgb(10, 10, 14);
+@@ -274,6 +275,7 @@ col_sel       = make_colour_rgb(70, 110, 70);
+ 
+ gpu_set_texfilter(false);
+ scr_ext_reset_memory();
++scr_ext_settings_init();
+ scr_ext_menu_build();
+ scr_ext_sid_setup();
+ scr_ext_update_window();
+diff --git a/options/mac/options_mac.yy b/options/mac/options_mac.yy
+index da227d0..a477b80 100644
+--- a/options/mac/options_mac.yy
++++ b/options/mac/options_mac.yy
+@@ -12,7 +12,7 @@
+   "option_mac_build_app_store":false,
+   "option_mac_build_number":0,
+   "option_mac_copyright":"",
+-  "option_mac_disable_sandbox":false,
++  "option_mac_disable_sandbox":true,
+   "option_mac_display_cursor":true,
+   "option_mac_display_name":"C64_Extractor",
+   "option_mac_enable_retina":false,
+diff --git a/options/windows/options_windows.yy b/options/windows/options_windows.yy
+index abe4406..a5bf234 100644
+--- a/options/windows/options_windows.yy
++++ b/options/windows/options_windows.yy
+@@ -9,7 +9,7 @@
+   "option_windows_copy_exe_to_dest":false,
+   "option_windows_d3dswapeffectdiscard":false,
+   "option_windows_description_info":"A GameMaker Game",
+-  "option_windows_disable_sandbox":false,
++  "option_windows_disable_sandbox":true,
+   "option_windows_display_cursor":true,
+   "option_windows_display_name":"C64_Extractor",
+   "option_windows_enable_steam":false,
+diff --git a/scripts/scr_ext_util/scr_ext_util.gml b/scripts/scr_ext_util/scr_ext_util.gml
+index 3a966ba..b4f6b3a 100644
+--- a/scripts/scr_ext_util/scr_ext_util.gml
++++ b/scripts/scr_ext_util/scr_ext_util.gml
+@@ -492,13 +492,72 @@ function scr_ext_summary_draw() {
+ }
+ 
+ // ---------------------------------------------------------------------------
+-// Recent projects (kept in c64_extractor.ini, newest first)
++// Settings file and recent projects
+ // ---------------------------------------------------------------------------
+ 
++/// @desc scr_ext_settings_init()
++/// One settings file per user, outside the project and the GameMaker save area,
++/// so recent projects survive new builds and new versions:
++///   Windows  %APPDATA%\C64Extractor\c64_extractor.ini
++///   Mac      ~/Library/Application Support/C64Extractor/c64_extractor.ini
++/// (needs the file system sandbox off - set in the Windows / Mac options).
++/// Falls back to the save area if that folder can't be made, and copies the
++/// recent list over from an older save-area file the first time.
++function scr_ext_settings_init() {
++    var _dir = "";
++    if (os_type == os_windows) {
++        var _app = environment_get_variable("APPDATA");
++        if (_app != "") {
++            _dir = _app + "\\C64Extractor\\";
++        }
++    }
++    else if (os_type == os_macosx) {
++        var _home = environment_get_variable("HOME");
++        if (_home != "") {
++            _dir = _home + "/Library/Application Support/C64Extractor/";
++        }
++    }
++    else {
++        var _home2 = environment_get_variable("HOME");
++        if (_home2 != "") {
++            _dir = _home2 + "/.c64extractor/";
++        }
++    }
++
++    var _old = game_save_id + "c64_extractor.ini";
++    settings_ini = _old;
++    if (_dir != "") {
++        if (!directory_exists(_dir)) {
++            directory_create(_dir);
++        }
++        if (directory_exists(_dir)) {
++            settings_ini = _dir + "c64_extractor.ini";
++        }
++    }
++
++    // First run with the shared file: bring the old recent list across
++    if (settings_ini != _old && !file_exists(settings_ini) && file_exists(_old)) {
++        var _paths = [];
++        ini_open(_old);
++        for (var _i = 0; _i < recent_max; _i++) {
++            var _p = ini_read_string("recent", "p" + string(_i), "");
++            if (_p != "") {
++                array_push(_paths, _p);
++            }
++        }
++        ini_close();
++        ini_open(settings_ini);
++        for (var _i = 0; _i < array_length(_paths); _i++) {
++            ini_write_string("recent", "p" + string(_i), _paths[_i]);
++        }
++        ini_close();
++    }
++}
++
+ /// @desc scr_ext_recent_list() - recent project paths that still exist
+ function scr_ext_recent_list() {
+     var _out = [];
+-    ini_open("c64_extractor.ini");
++    ini_open(settings_ini);
+     for (var _i = 0; _i < recent_max; _i++) {
+         var _p = ini_read_string("recent", "p" + string(_i), "");
+         if (_p != "") {
+@@ -522,7 +581,7 @@ function scr_ext_recent_add(_path) {
+             }
+         }
+     }
+-    ini_open("c64_extractor.ini");
++    ini_open(settings_ini);
+     for (var _i = 0; _i < recent_max; _i++) {
+         var _p = "";
+         if (_i < array_length(_list)) {

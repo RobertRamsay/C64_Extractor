@@ -254,6 +254,7 @@ menu_base = [
 ];
 menu_items = [];           // menu_base + recent projects (scr_ext_menu_build)
 recent_max = 8;
+settings_ini = "";        // set by scr_ext_settings_init
 
 // ---- Colours ----
 col_bg        = make_colour_rgb(10, 10, 14);
@@ -274,6 +275,7 @@ col_sel       = make_colour_rgb(70, 110, 70);
 
 gpu_set_texfilter(false);
 scr_ext_reset_memory();
+scr_ext_settings_init();
 scr_ext_menu_build();
 scr_ext_sid_setup();
 scr_ext_update_window();
