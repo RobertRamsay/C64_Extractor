@@ -1,0 +1,261 @@
+diff --git a/scripts/scr_ext_detect/scr_ext_detect.gml b/scripts/scr_ext_detect/scr_ext_detect.gml
+index 9b9b0f6..072e21d 100644
+--- a/scripts/scr_ext_detect/scr_ext_detect.gml
++++ b/scripts/scr_ext_detect/scr_ext_detect.gml
+@@ -805,33 +805,53 @@ function scr_ext_scan_file_buf(_buf, _len) {
+ // ---------------------------------------------------------------------------
+ 
+ /// @desc scr_ext_detect_sid()
+-/// Finds code that stores to the SID ($D400-$D7FF, registers repeat every $20),
+-/// groups those stores into routines, and looks for the usual JMP init / JMP play
+-/// table in front of a routine. Adds "SID music" / "SID sound code" findings.
++/// 1. Finds every store to the SID ($D400-$D7FF) by its byte pattern - STA/STX/
++///    STY/SAX absolute or indexed - so it works whatever the bytes were classed as.
++/// 2. Groups the stores into routines (no more than $300 apart).
++/// 3. Collects possible init / play addresses: a JMP init / JMP play table in
++///    front of the routine, and every JSR / JMP elsewhere that lands in it.
++/// 4. Proves it: runs init, then play for 25 frames on the 6502 core, and checks
++///    the SID registers change frame to frame like music. Verified = 100%.
+ function scr_ext_detect_sid() {
+-    var _ops = global.ext_ops;
++    // ---- 1. SID stores by pattern ----
+     var _hits = [];
+-    for (var _a = 0; _a < 65536; _a++) {
+-        if (buffer_peek(istart_buf, _a, buffer_u8) != 1) {
++    for (var _a = 0; _a < 0xFFFD; _a++) {
++        var _op = buffer_peek(mem_buf, _a, buffer_u8);
++        if (_op != 0x8D && _op != 0x9D && _op != 0x99 && _op != 0x8E && _op != 0x8C && _op != 0x8F) {
+             continue;
+         }
+-        var _op = _ops[buffer_peek(mem_buf, _a, buffer_u8)];
+-        if (_op.mn != "STA" && _op.mn != "STX" && _op.mn != "STY" && _op.mn != "SAX") {
++        var _hi = buffer_peek(mem_buf, _a + 2, buffer_u8);
++        if (_hi < 0xD4 || _hi > 0xD7) {
+             continue;
+         }
+-        if (_op.mode != EXT_MODE_ABS && _op.mode != EXT_MODE_ABX && _op.mode != EXT_MODE_ABY) {
++        if (buffer_peek(loaded_buf, _a, buffer_u8) == 0) {
+             continue;
+         }
+-        var _t = scr_ext_peek16(_a + 1);
+-        if (_t >= 0xD400 && _t < 0xD800) {
+-            array_push(_hits, { at : _a, reg : _t & 0x1F, indexed : _op.mode != EXT_MODE_ABS });
++        var _cls = buffer_peek(cls_buf, _a, buffer_u8);
++        if (_cls == EXT_CLS_TEXT) {
++            continue;
+         }
++        array_push(_hits, { at : _a, reg : buffer_peek(mem_buf, _a + 1, buffer_u8) & 0x1F, indexed : (_op == 0x9D || _op == 0x99) });
+     }
+-
+     var _n = array_length(_hits);
++    if (_n == 0) {
++        return;
++    }
++
++    // ---- JSR / JMP targets anywhere in memory (candidate entry points) ----
++    var _calls = [];
++    for (var _a = 0; _a < 0xFFFD; _a++) {
++        var _o = buffer_peek(mem_buf, _a, buffer_u8);
++        if (_o == 0x20 || _o == 0x4C) {
++            if (buffer_peek(loaded_buf, _a, buffer_u8) == 1) {
++                array_push(_calls, scr_ext_peek16(_a + 1));
++            }
++        }
++    }
++
++    var _verify_budget = 4;     // routines verified per analysis (each costs a few frames of 6502)
+     var _i = 0;
+     while (_i < _n) {
+-        // One routine = stores no more than $300 apart
+         var _j = _i;
+         while (_j + 1 < _n && _hits[_j + 1].at - _hits[_j].at <= 0x300) {
+             _j++;
+@@ -871,11 +891,9 @@ function scr_ext_detect_sid() {
+                 _conf += 5;
+             }
+ 
+-            // JMP init / JMP play table up to $400 before the routine
+-            var _init = -1;
+-            var _play = -1;
+-            var _table = -1;
+-            var _lo = _start - 0x400;
++            // ---- 3. entry candidates: [init, play] pairs, best first ----
++            var _pairs = [];
++            var _lo = _start - 0x800;
+             if (_lo < 0) {
+                 _lo = 0;
+             }
+@@ -883,25 +901,86 @@ function scr_ext_detect_sid() {
+                 if (buffer_peek(mem_buf, _p, buffer_u8) == 0x4C && buffer_peek(mem_buf, (_p + 3) & 0xFFFF, buffer_u8) == 0x4C) {
+                     var _t1 = scr_ext_peek16(_p + 1);
+                     var _t2 = scr_ext_peek16(_p + 4);
+-                    if (_t1 >= _start - 0x800 && _t1 <= _end + 0x800 && _t2 >= _start - 0x800 && _t2 <= _end + 0x800 && _t1 != _t2) {
++                    if (_t1 != _t2 && _t1 >= _start - 0x800 && _t1 <= _end + 0x800 && _t2 >= _start - 0x800 && _t2 <= _end + 0x800) {
+                         if (scr_ext_is_loaded(_t1) && scr_ext_is_loaded(_t2)) {
+-                            _table = _p;
+-                            _init = _t1;
+-                            _play = _t2;
++                            array_push(_pairs, { init : _t1, play : _t2, table : _p });
+                             break;
+                         }
+                     }
+                 }
+             }
++            // Calls into the routine: each could be play, any other could be init
++            var _targets = [];
++            for (var _c = 0; _c < array_length(_calls); _c++) {
++                var _t = _calls[_c];
++                if (_t >= _start - 0x200 && _t <= _end && scr_ext_is_loaded(_t)) {
++                    var _seen = false;
++                    for (var _q = 0; _q < array_length(_targets); _q++) {
++                        if (_targets[_q] == _t) {
++                            _seen = true;
++                        }
++                    }
++                    if (!_seen && array_length(_targets) < 6) {
++                        array_push(_targets, _t);
++                    }
++                }
++            }
++            for (var _pl = 0; _pl < array_length(_targets); _pl++) {
++                var _init_guess = -1;
++                for (var _in = 0; _in < array_length(_targets); _in++) {
++                    if (_in != _pl) {
++                        _init_guess = _targets[_in];
++                        break;
++                    }
++                }
++                array_push(_pairs, { init : _init_guess, play : _targets[_pl], table : -1 });
++            }
+ 
++            // ---- 4. verify by playing ----
+             var _kind = "SID sound code";
+             var _why = string(_distinct) + " SID registers written";
+-            if (_table >= 0) {
++            var _init = -1;
++            var _play = -1;
++            if (array_length(_pairs) > 0 && _pairs[0].table >= 0) {
++                // A table is good evidence even before playing it
+                 _kind = "SID music";
++                _init = _pairs[0].init;
++                _play = _pairs[0].play;
++                _start = _pairs[0].table;
+                 _conf += 15;
+-                _start = _table;
+                 _why = "init $" + scr_ext_hex(_init, 4) + "  play $" + scr_ext_hex(_play, 4) + ", " + _why;
+             }
++            var _tries = array_length(_pairs);
++            if (_tries > 4) {
++                _tries = 4;
++            }
++            if (_verify_budget > 0) {
++                _verify_budget -= 1;
++                for (var _t3 = 0; _t3 < _tries; _t3++) {
++                    var _v = scr_ext_sid_verify(_pairs[_t3].init, _pairs[_t3].play);
++                    if (_v >= 1) {
++                        _kind = "SID music";
++                        _init = _pairs[_t3].init;
++                        _play = _pairs[_t3].play;
++                        if (_pairs[_t3].table >= 0) {
++                            _start = _pairs[_t3].table;
++                        }
++                        var _init_txt = "none";
++                        if (_init >= 0) {
++                            _init_txt = "$" + scr_ext_hex(_init, 4);
++                        }
++                        if (_v == 2) {
++                            _conf = 100;
++                            _why = "verified - it plays: init " + _init_txt + "  play $" + scr_ext_hex(_play, 4) + ", notes change every few frames";
++                        }
++                        else {
++                            _conf = 90;
++                            _why = "runs: init " + _init_txt + "  play $" + scr_ext_hex(_play, 4) + ", SID set up but little change yet";
++                        }
++                        break;
++                    }
++                }
++            }
+             if (_conf > 100) {
+                 _conf = 100;
+             }
+@@ -911,6 +990,80 @@ function scr_ext_detect_sid() {
+     }
+ }
+ 
++/// @desc scr_ext_sid_verify(init, play)
++/// Runs init (if any) then play for 25 frames on a copy of memory.
++/// Returns 2 = SID registers keep changing (music), 1 = runs and sets the SID up,
++/// 0 = doesn't run cleanly, -1 = not checked (the 6502 is busy).
++function scr_ext_sid_verify(_init, _play) {
++    if (cpu_active || sid_playing) {
++        return -1;
++    }
++    // The 6502 may be holding a paused multi-stage unpack: keep it intact
++    var _keep_cpu = variable_clone(cpu);
++    var _keep_mem = buffer_create(65536, buffer_fixed, 1);
++    var _keep_w = buffer_create(65536, buffer_fixed, 1);
++    var _keep_ex = buffer_create(65536, buffer_fixed, 1);
++    buffer_copy(cpu_mem, 0, 65536, _keep_mem, 0);
++    buffer_copy(cpu_w, 0, 65536, _keep_w, 0);
++    buffer_copy(cpu_execd, 0, 65536, _keep_ex, 0);
++
++    var _result = scr_ext_sid_verify_run(_init, _play);
++
++    cpu = _keep_cpu;
++    buffer_copy(_keep_mem, 0, 65536, cpu_mem, 0);
++    buffer_copy(_keep_w, 0, 65536, cpu_w, 0);
++    buffer_copy(_keep_ex, 0, 65536, cpu_execd, 0);
++    buffer_delete(_keep_mem);
++    buffer_delete(_keep_w);
++    buffer_delete(_keep_ex);
++    return _result;
++}
++
++/// @desc scr_ext_sid_verify_run(init, play) - the test itself (see scr_ext_sid_verify)
++function scr_ext_sid_verify_run(_init, _play) {
++    buffer_copy(mem_buf, 0, 65536, cpu_mem, 0);
++    buffer_fill(cpu_w, 0, buffer_u8, 0, 65536);
++    buffer_fill(cpu_execd, 0, buffer_u8, 0, 65536);
++    buffer_fill(sid_shadow, 0, buffer_u8, 0, 32);
++    buffer_poke(cpu_mem, 0x01, buffer_u8, 0x37);
++    cpu = scr_ext_cpu_new_state();
++    cpu.sp = 0xF6;
++
++    if (_init >= 0) {
++        if (scr_ext_sid_call(_init, 0, 150000) != "return") {
++            return 0;
++        }
++    }
++    var _prev = array_create(25, -1);
++    var _changes = 0;
++    var _touched = 0;
++    for (var _f = 0; _f < 25; _f++) {
++        if (scr_ext_sid_call(_play, 0, 25000) != "return") {
++            return 0;
++        }
++        for (var _r = 0; _r < 25; _r++) {
++            var _v = buffer_peek(sid_shadow, _r, buffer_u8);
++            if (_v != _prev[_r]) {
++                if (_prev[_r] >= 0) {
++                    _changes += 1;
++                }
++                else if (_v != 0) {
++                    _touched += 1;
++                }
++                _prev[_r] = _v;
++            }
++        }
++    }
++    var _volume = buffer_peek(sid_shadow, 0x18, buffer_u8) & 15;
++    if (_volume > 0 && _changes >= 8) {
++        return 2;
++    }
++    if (_changes > 0 || _touched >= 3) {
++        return 1;
++    }
++    return 0;
++}
++
+ // ---------------------------------------------------------------------------
+ // 6. Bitmaps by their layout
+ // ---------------------------------------------------------------------------
