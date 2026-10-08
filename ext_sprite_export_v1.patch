@@ -1,0 +1,130 @@
+diff --git a/scripts/scr_ext_gfx/scr_ext_gfx.gml b/scripts/scr_ext_gfx/scr_ext_gfx.gml
+index 31acf25..f0ecb62 100644
+--- a/scripts/scr_ext_gfx/scr_ext_gfx.gml
++++ b/scripts/scr_ext_gfx/scr_ext_gfx.gml
+@@ -99,9 +99,9 @@ function scr_ext_gfx_build_buttons() {
+     // Row 4: nudge the start address (hold to repeat) and auto-align
+     _bx = gfx_x;
+     _by = gfx_y + 84;
+-    var _labels4  = ["-1 cell", "-1 byte", "+1 byte", "+1 cell", "Align [L]"];
+-    var _actions4 = ["gnudge",  "gnudge",  "gnudge",  "gnudge",  "galign"];
+-    var _args4    = [-2,        -1,        1,         2,         0];
++    var _labels4  = ["-1 cell", "-1 byte", "+1 byte", "+1 cell", "Align [L]", "Export sprites"];
++    var _actions4 = ["gnudge",  "gnudge",  "gnudge",  "gnudge",  "galign",    "gexpspr"];
++    var _args4    = [-2,        -1,        1,         2,         0,           0];
+     for (var _i = 0; _i < array_length(_labels4); _i++) {
+         var _w4 = string_width(_labels4[_i]) + 18;
+         array_push(gfx_buttons, { bx : _bx, by : _by, bw : _w4, bh : 22, label : _labels4[_i], action : _actions4[_i], arg : _args4[_i] });
+@@ -317,6 +317,10 @@ function scr_ext_gfx_do_button(_b, _shift) {
+             scr_ext_gfx_export_picture();
+             break;
+ 
++        case "gexpspr":
++            scr_ext_gfx_export_sprites();
++            break;
++
+         case "ggrid":
+             if (gfx_grid) {
+                 gfx_grid = false;
+@@ -1050,3 +1054,101 @@ function scr_ext_gfx_export_picture() {
+         status_text = "Saved Art Studio hires picture " + filename_name(_path) + " (9009 bytes, load $2000).";
+     }
+ }
++
++/// @desc scr_ext_gfx_export_sprites()
++/// Exports sprites exactly as the viewer grid shows them: sprite k starts at
++/// gfx_addr + k * 64, so a fine offset (e.g. $8613) is kept, not snapped to $xx00/$xx40.
++/// Which sprites: every sprite cell the selection touches, or the whole view if
++/// nothing is selected. Up to 64 (C64 Dev Machine's import limit).
++///   .spd  SpritePad v3 layout read by SPRED64: 16-byte header ('SPD', 3, flags,
++///         count, ..., BG/MC1/MC2 at [13]/[14]/[15]) then 64 bytes per sprite with
++///         byte 63 = attribute (bit 7 multicolour, bits 0-3 sprite colour)
++///   .bin  the same 64-byte sprites without the header
++function scr_ext_gfx_export_sprites() {
++    if (!scr_ext_gfx_is_sprite()) {
++        status_text = "Export sprites works in the sprite modes - switch to HR or MC Sprite.";
++        return;
++    }
++
++    // Sprite index range relative to the viewer start
++    var _k1 = 0;
++    var _k2 = (gfx_screen_bytes div 64) - 1;
++    if (sel_active) {
++        _k1 = floor((sel_start - gfx_addr) / 64);
++        _k2 = floor((sel_end - gfx_addr) / 64);
++    }
++    var _count = _k2 - _k1 + 1;
++    var _capped = false;
++    if (_count > 64) {
++        _count = 64;
++        _capped = true;
++    }
++    if (_count < 1) {
++        status_text = "No sprites to export.";
++        return;
++    }
++    var _first = (gfx_addr + _k1 * 64) & 0xFFFF;
++
++    var _default = "sprites_" + scr_ext_hex(_first, 4) + ".spd";
++    var _path = get_save_filename("SpritePad (C64 Dev Machine / SPRED64)|*.spd|Raw 64-byte sprites|*.bin", _default);
++    io_clear();
++    last_win_w = 0;
++    map_dirty = true;
++    gfx_dirty = true;
++    if (_path == "") {
++        return;
++    }
++    var _spd = true;
++    if (string_lower(filename_ext(_path)) == ".bin") {
++        _spd = false;
++    }
++
++    // Viewer colours -> C64 sprite registers.
++    // MC render uses pair 01 = M1, 10 = M2, 11 = FG, which on the C64 are
++    // $D025 (MC0), the sprite's own colour, and $D026 (MC1).
++    var _mc = scr_ext_gfx_is_mc();
++    var _sprite_col = gfx_col[3];
++    var _d025 = gfx_col[1];
++    var _d026 = gfx_col[2];
++    var _attr = gfx_col[3] & 15;
++    if (_mc) {
++        _sprite_col = gfx_col[2];
++        _d026 = gfx_col[3];
++        _attr = 0x80 | (_sprite_col & 15);
++    }
++
++    var _hdr = 0;
++    if (_spd) {
++        _hdr = 16;
++    }
++    var _size = _hdr + _count * 64;
++    var _out = buffer_create(_size, buffer_fixed, 1);
++    buffer_fill(_out, 0, buffer_u8, 0, _size);
++    if (_spd) {
++        buffer_poke(_out, 0, buffer_u8, 83);        // 'S'
++        buffer_poke(_out, 1, buffer_u8, 80);        // 'P'
++        buffer_poke(_out, 2, buffer_u8, 68);        // 'D'
++        buffer_poke(_out, 3, buffer_u8, 3);         // version 3 header (16 bytes)
++        buffer_poke(_out, 4, buffer_u8, 0);
++        buffer_poke(_out, 5, buffer_u8, _count & 0xFF);
++        buffer_poke(_out, 6, buffer_u8, (_count >> 8) & 0xFF);
++        buffer_poke(_out, 13, buffer_u8, gfx_col[0] & 15);   // BG    ($D021)
++        buffer_poke(_out, 14, buffer_u8, _d025 & 15);        // MC1   ($D025)
++        buffer_poke(_out, 15, buffer_u8, _d026 & 15);        // MC2   ($D026)
++    }
++    for (var _k = 0; _k < _count; _k++) {
++        var _src = _first + _k * 64;
++        var _dst = _hdr + _k * 64;
++        for (var _i = 0; _i < 63; _i++) {
++            buffer_poke(_out, _dst + _i, buffer_u8, buffer_peek(mem_buf, (_src + _i) & 0xFFFF, buffer_u8));
++        }
++        buffer_poke(_out, _dst + 63, buffer_u8, _attr);
++    }
++    buffer_save(_out, _path);
++    buffer_delete(_out);
++
++    status_text = "Exported " + string(_count) + " sprites from $" + scr_ext_hex(_first, 4) + " (64-byte steps, offset kept) to " + filename_name(_path);
++    if (_capped) {
++        status_text += " - capped at 64, the import limit";
++    }
++}
